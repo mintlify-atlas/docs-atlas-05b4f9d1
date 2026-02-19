@@ -1,0 +1,482 @@
+---
+title: Creating Custom Styles
+description: Learn how to organize and distribute custom Vale styles
+---
+
+Vale styles are collections of rules organized into reusable packages. This guide shows you how to create, structure, and share custom styles.
+
+## What is a Style?
+
+A style is a directory containing Vale rules (YAML files) that enforce a specific writing standard. Each style has:
+
+- A directory name (the style name)
+- One or more rule files (`.yml` extension)
+- Optional configuration files
+
+```
+styles/
+└── MyStyle/
+    ├── Headings.yml
+    ├── Acronyms.yml
+    ├── Spelling.yml
+    └── meta.json
+```
+
+## Creating a Basic Style
+
+<Steps>
+  <Step title="Create the style directory">
+    Create a directory in your `StylesPath`:
+    
+    ```bash
+    mkdir -p styles/MyCompany
+    ```
+    
+    The directory name becomes your style name (`MyCompany`).
+  </Step>
+  
+  <Step title="Add your first rule">
+    Create a rule file in the style directory:
+    
+    ```yaml styles/MyCompany/Terms.yml
+    extends: substitution
+    message: "Use '%s' instead of '%s'"
+    ignorecase: true
+    level: error
+    action:
+      name: replace
+    swap:
+      MyCompany: MyCompany Inc.
+      mycorp: MyCompany
+    ```
+  </Step>
+  
+  <Step title="Enable the style">
+    Reference the style in your `.vale.ini`:
+    
+    ```ini .vale.ini
+    StylesPath = styles
+    MinAlertLevel = suggestion
+    
+    [*]
+    BasedOnStyles = MyCompany
+    ```
+  </Step>
+  
+  <Step title="Test the style">
+    Run Vale to test your style:
+    
+    ```bash
+    vale "Welcome to mycorp!"
+    ```
+  </Step>
+</Steps>
+
+## Style Organization
+
+### Directory Structure
+
+A well-organized style follows this structure:
+
+```
+styles/
+└── MyCompany/
+    ├── meta.json              # Optional: Style metadata
+    ├── Vocabulary/            # Vocabulary files
+    │   ├── accept.txt
+    │   └── reject.txt
+    ├── Dictionaries/          # Custom dictionaries
+    │   └── en_US/
+    │       ├── custom.dic
+    │       └── custom.aff
+    ├── Acronyms.yml          # Individual rules
+    ├── Headings.yml
+    ├── Spelling.yml
+    ├── Terms.yml
+    └── Tone.yml
+```
+
+### Naming Conventions
+
+Follow these conventions for rule files:
+
+- Use PascalCase for rule names: `Acronyms.yml`, `PassiveVoice.yml`
+- Make names descriptive: `HeadingCapitalization.yml` not `Heading.yml`
+- Group related rules with prefixes: `Spelling*.yml`, `Terms*.yml`
+
+<Note>
+  Rule names appear in alerts as `StyleName.RuleName`, so choose names that make sense to your users.
+</Note>
+
+## Built-in Default Rules
+
+Vale provides built-in rules in the `Vale` style. You can reference these in your config:
+
+```ini .vale.ini
+StylesPath = styles
+
+[*]
+BasedOnStyles = Vale, MyCompany
+
+# Configure built-in rules
+Vale.Avoid = YES
+Vale.Terms = YES
+Vale.Repetition = YES
+Vale.Spelling = YES
+```
+
+The built-in Vale rules are defined in `internal/check/definition.go`:
+
+- **Vale.Avoid**: Blocks specific tokens
+- **Vale.Terms**: Enforces terminology from vocabularies
+- **Vale.Repetition**: Detects repeated words
+- **Vale.Spelling**: Spell checks with dictionary support
+
+## Creating a Vocabulary
+
+Vocabularies define accepted and rejected terms for your style.
+
+<Steps>
+  <Step title="Create vocabulary files">
+    Create the Vocab directory structure:
+    
+    ```bash
+    mkdir -p styles/MyCompany/Vocab
+    touch styles/MyCompany/Vocab/accept.txt
+    touch styles/MyCompany/Vocab/reject.txt
+    ```
+  </Step>
+  
+  <Step title="Add accepted terms">
+    List one term per line in `accept.txt`:
+    
+    ```text styles/MyCompany/Vocab/accept.txt
+    MyCompany
+    API
+    JavaScript
+    TypeScript
+    ```
+    
+    These terms will be:
+    - Excluded from spell checking
+    - Used as exceptions in rules with `vocab: true`
+  </Step>
+  
+  <Step title="Add rejected terms">
+    List terms to avoid in `reject.txt`:
+    
+    ```text styles/MyCompany/Vocab/reject.txt
+    MyCompany Inc
+    Javascript
+    Typescript
+    ```
+  </Step>
+  
+  <Step title="Reference the vocabulary">
+    Enable the vocabulary in `.vale.ini`:
+    
+    ```ini .vale.ini
+    StylesPath = styles
+    Vocab = MyCompany
+    
+    [*]
+    BasedOnStyles = MyCompany
+    ```
+  </Step>
+</Steps>
+
+<Info>
+  Terms in `accept.txt` are automatically added as exceptions to all rules with `vocab: true` (the default for most rule types).
+</Info>
+
+## Rule Reuse with Exceptions
+
+Use the `vocab` and `exceptions` keys to make rules flexible:
+
+```yaml styles/MyCompany/Abbreviations.yml
+extends: existence
+message: "Define abbreviations on first use"
+level: warning
+vocab: true  # Ignore terms from accept.txt
+tokens:
+  - '\b[A-Z]{2,}\b'
+exceptions:
+  # Always ignore these
+  - API
+  - URL
+  - HTTP
+  - HTTPS
+```
+
+When `vocab: true`, the rule automatically ignores all terms from your vocabulary's `accept.txt`.
+
+## Style Metadata
+
+Create a `meta.json` file to provide style information:
+
+```json styles/MyCompany/meta.json
+{
+  "name": "MyCompany",
+  "description": "MyCompany writing style guide",
+  "author": "MyCompany Documentation Team",
+  "version": "1.0.0",
+  "url": "https://github.com/mycompany/vale-style",
+  "license": "MIT",
+  "vale_version": ">=3.0.0"
+}
+```
+
+## Packaging for Distribution
+
+To share your style, create a package compatible with Vale's `sync` command.
+
+<Steps>
+  <Step title="Create a GitHub repository">
+    Create a repository with this structure:
+    
+    ```
+    vale-mycompany/
+    ├── README.md
+    ├── LICENSE
+    ├── MyCompany/
+    │   ├── meta.json
+    │   ├── Vocab/
+    │   │   ├── accept.txt
+    │   │   └── reject.txt
+    │   └── *.yml (your rules)
+    └── .vale.ini (example config)
+    ```
+  </Step>
+  
+  <Step title="Create a release">
+    Create a GitHub release with your style directory as a `.zip` file:
+    
+    ```bash
+    cd vale-mycompany
+    zip -r MyCompany.zip MyCompany/
+    gh release create v1.0.0 MyCompany.zip
+    ```
+  </Step>
+  
+  <Step title="Configure the package">
+    Users can install your style via the `Packages` key:
+    
+    ```ini .vale.ini
+    StylesPath = styles
+    
+    Packages = https://github.com/mycompany/vale-mycompany/releases/latest/download/MyCompany.zip
+    
+    [*]
+    BasedOnStyles = MyCompany
+    ```
+  </Step>
+  
+  <Step title="Sync the package">
+    Users run `vale sync` to download and install:
+    
+    ```bash
+    vale sync
+    # Synced 1 package(s) to 'styles'.
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  The `.zip` file must contain a directory with the exact style name. Vale extracts this to `StylesPath`.
+</Warning>
+
+## Using Multiple Styles
+
+Combine multiple styles in your configuration:
+
+```ini .vale.ini
+StylesPath = styles
+
+Packages = Microsoft, write-good, MyCompany
+
+[*]
+BasedOnStyles = Vale, Microsoft, MyCompany
+
+[*.md]
+BasedOnStyles = Vale, Microsoft, write-good
+
+[*.{js,jsx,ts,tsx}]
+BasedOnStyles = Microsoft
+```
+
+Vale applies all specified styles, and later styles can override earlier ones.
+
+## Style Inheritance
+
+While Vale doesn't support direct style inheritance, you can reference rules from other styles:
+
+```ini .vale.ini
+[*.md]
+BasedOnStyles = BaseStyle, MyStyle
+
+# Override specific rules
+BaseStyle.Headings = NO
+MyStyle.Terms = YES
+```
+
+## Testing Your Style
+
+Create test cases for your style:
+
+```
+MyCompany/
+├── Acronyms.yml
+├── test/
+│   ├── Acronyms/
+│   │   ├── valid.md
+│   │   └── invalid.md
+│   └── .vale.ini
+```
+
+Test files:
+
+```markdown MyCompany/test/Acronyms/valid.md
+The World Health Organization (WHO) is a specialized agency.
+
+WHO has been active since 1948.
+```
+
+```markdown MyCompany/test/Acronyms/invalid.md
+WHO has been active since 1948.
+```
+
+Test configuration:
+
+```ini MyCompany/test/.vale.ini
+StylesPath = ../..
+MinAlertLevel = suggestion
+
+[*]
+BasedOnStyles = MyCompany
+```
+
+Run tests:
+
+```bash
+cd MyCompany/test
+vale Acronyms/invalid.md
+# Should show: Acronyms/invalid.md:1:1: MyCompany.Acronyms: 'WHO' has no definition
+
+vale Acronyms/valid.md
+# Should show no errors
+```
+
+## Publishing to the Vale Style Library
+
+To share your style with the community:
+
+1. **Create a GitHub repository** following the package structure above
+2. **Add comprehensive documentation** in your README
+3. **Submit to the styles repository**: https://github.com/errata-ai/styles
+4. **Follow the submission guidelines** in the repository
+
+Popular styles include:
+- **Microsoft**: Microsoft Writing Style Guide
+- **Google**: Google Developer Documentation Style Guide
+- **write-good**: Naive linter for English prose
+- **proselint**: Prose linting from professional writers
+
+## Advanced: Style Configuration
+
+Create a default configuration file for your style:
+
+```ini MyCompany/.vale.ini
+# Users can reference this as a starting point
+StylesPath = styles
+MinAlertLevel = suggestion
+
+[*]
+BasedOnStyles = MyCompany
+
+# Example format-specific config
+[*.md]
+BasedOnStyles = Vale, MyCompany
+
+[*.{rst,rest}]
+BasedOnStyles = MyCompany
+```
+
+## Example: Complete Style
+
+Here's a complete minimal style:
+
+<Accordion title="MyCompany style files">
+
+```yaml styles/MyCompany/Terms.yml
+extends: substitution
+message: "Use '%s' instead of '%s'"
+ignorecase: true
+level: error
+vocab: true
+action:
+  name: replace
+swap:
+  javascript: JavaScript
+  api endpoint: API endpoint
+  rest api: REST API
+```
+
+```yaml styles/MyCompany/Headings.yml
+extends: capitalization
+message: "'%s' should be in sentence case"
+level: warning
+scope: heading
+match: $sentence
+vocab: true
+```
+
+```yaml styles/MyCompany/Spelling.yml
+extends: spelling
+message: "Did you mean '%s'?"
+level: error
+vocab: true
+action:
+  name: suggest
+  params: [spellings]
+```
+
+```text styles/MyCompany/Vocab/accept.txt
+MyCompany
+JavaScript
+TypeScript
+API
+REST
+```
+
+```ini .vale.ini
+StylesPath = styles
+Vocab = MyCompany
+MinAlertLevel = suggestion
+
+[*]
+BasedOnStyles = MyCompany
+```
+
+</Accordion>
+
+## Best Practices
+
+1. **Start with vocabulary**: Define your terminology first
+2. **Test thoroughly**: Create test cases for each rule
+3. **Document your rules**: Add clear messages and links
+4. **Version your style**: Use semantic versioning
+5. **Provide examples**: Include example configuration files
+6. **Use consistent naming**: Follow established naming conventions
+7. **Enable vocab by default**: Set `vocab: true` on most rules
+8. **Package for distribution**: Make it easy for others to install
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Writing Rules" icon="pen" href="/guides/writing-rules">
+    Learn how to create individual Vale rules
+  </Card>
+  <Card title="CI Integration" icon="gears" href="/guides/ci-integration">
+    Integrate your style into CI/CD pipelines
+  </Card>
+</CardGroup>

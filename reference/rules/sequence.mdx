@@ -1,0 +1,303 @@
+---
+title: Sequence
+description: Match specific sequences of tokens with NLP support
+---
+
+The `sequence` rule type identifies specific patterns of tokens using optional part-of-speech (POS) tagging. It's the most sophisticated rule type, enabling detection of complex grammatical patterns.
+
+## How It Works
+
+The `sequence` rule defines a series of token requirements, optionally using POS tags for grammatical matching. It searches for an "anchor" token, then validates that surrounding tokens match the sequence requirements.
+
+## Parameters
+
+<ParamField path="tokens" type="array" required>
+  An array of token specifications. Each token can have `pattern`, `tag`, `skip`, and `negate` properties.
+</ParamField>
+
+<ParamField path="ignorecase" type="boolean" default="false">
+  Makes pattern matching case-insensitive when set to `true`.
+</ParamField>
+
+### Token Properties
+
+Each token in the `tokens` array can have:
+
+<ParamField path="pattern" type="string">
+  A regex pattern to match the token's text content.
+</ParamField>
+
+<ParamField path="tag" type="string">
+  A POS tag or tag pattern to match (e.g., `NN` for noun, `VB.*` for any verb form).
+</ParamField>
+
+<ParamField path="skip" type="integer" default="0">
+  Number of optional tokens that can appear before this token.
+</ParamField>
+
+<ParamField path="negate" type="boolean" default="false">
+  When `true`, matches tokens that DON'T match the pattern or tag.
+</ParamField>
+
+## POS Tags Reference
+
+Common Penn Treebank POS tags:
+
+| Tag | Description | Example |
+|-----|-------------|---------|
+| `NN` | Noun, singular | "dog", "car" |
+| `NNS` | Noun, plural | "dogs", "cars" |
+| `NNP` | Proper noun, singular | "John", "London" |
+| `NNPS` | Proper noun, plural | "Americans" |
+| `VB` | Verb, base form | "run", "go" |
+| `VBD` | Verb, past tense | "ran", "went" |
+| `VBG` | Verb, gerund | "running", "going" |
+| `VBN` | Verb, past participle | "run", "gone" |
+| `JJ` | Adjective | "big", "green" |
+| `RB` | Adverb | "quickly", "very" |
+| `PRP` | Pronoun, personal | "he", "she", "it" |
+| `PRP$` | Pronoun, possessive | "his", "her", "its" |
+| `DT` | Determiner | "the", "a", "an" |
+
+## Examples
+
+### Ambiguous Pronoun Detection
+
+Flag pronouns that follow nouns with too much distance:
+
+```yaml
+extends: sequence
+message: "Avoid ambiguous pronouns"
+level: warning
+ignorecase: true
+tokens:
+  - tag: NN|NNP|NNPS|NNS
+    skip: 7
+  - tag: PRP|PRP$
+    pattern: he|she|its?|they|his|her|their
+```
+
+This catches: "The company announced a new product last week. **They** said..." (ambiguous "they")
+
+### Passive Voice Detection
+
+Identify passive voice constructions:
+
+```yaml
+extends: sequence
+message: "Consider using active voice"
+level: suggestion
+tokens:
+  - tag: VB.*
+    pattern: is|are|was|were|be|been|being
+  - skip: 2  # Allow up to 2 words between
+  - tag: VBN
+```
+
+This catches patterns like:
+- "was **written**"
+- "are being **reviewed**"
+- "has been **approved**"
+
+### Weak Modifiers
+
+Detect weak writing with unnecessary modifiers:
+
+```yaml
+extends: sequence
+message: "Avoid weak modifiers"
+level: suggestion
+tokens:
+  - pattern: very|really|quite|somewhat|rather
+  - tag: JJ
+```
+
+This catches: "very **good**", "really **important**"
+
+### Noun + Of + Noun
+
+Suggest more concise phrasing:
+
+```yaml
+extends: sequence
+message: "Consider using a possessive form"
+level: suggestion
+tokens:
+  - tag: NN|NNS
+  - pattern: of
+  - tag: NN|NNS
+```
+
+This catches: "documentation **of** the API" → suggest "API documentation"
+
+### Repeated Prepositions
+
+Flag awkward constructions:
+
+```yaml
+extends: sequence
+message: "Repeated prepositions"
+level: warning
+tokens:
+  - tag: IN
+    pattern: in|on|at|to|from
+  - skip: 3
+  - tag: IN
+    pattern: in|on|at|to|from
+```
+
+### Complex Sentence Patterns
+
+Detect multiple clauses that might be confusing:
+
+```yaml
+extends: sequence
+message: "Sentence may be too complex"
+level: suggestion
+tokens:
+  - pattern: ','
+  - skip: 5
+  - pattern: ','
+  - skip: 5
+  - pattern: ','
+```
+
+### Negated Pattern
+
+Match tokens that DON'T have specific properties:
+
+```yaml
+extends: sequence
+message: "Missing article before noun"
+level: warning
+tokens:
+  - tag: DT
+    negate: true
+  - tag: JJ
+  - tag: NN
+```
+
+This catches adjective-noun pairs missing articles.
+
+## Use Cases
+
+<Info>
+The `sequence` rule is ideal for:
+- Detecting grammatical patterns (passive voice, nominalizations)
+- Enforcing style preferences (active voice, conciseness)
+- Identifying ambiguous pronoun references
+- Catching weak or vague constructions
+- Advanced style checking beyond simple pattern matching
+</Info>
+
+## Scope Behavior
+
+<Warning>
+The `sequence` rule is always sentence-scoped. Vale automatically sets `scope: sentence` regardless of your configuration.
+
+This is necessary because POS tagging and token sequencing require sentence boundaries for accurate analysis.
+</Warning>
+
+## Technical Details
+
+Internally, the `sequence` rule (internal/check/sequence.go:246-292):
+
+1. Tokenizes the text using `nlp.TextToTokens` with POS tagging
+2. Searches for the first non-negated token with a pattern (the "anchor")
+3. For each anchor match, validates the left-hand side tokens
+4. Validates the right-hand side tokens
+5. If the full sequence matches, creates an alert spanning all matched tokens
+
+The matching algorithm:
+```go
+func tokensMatch(token NLPToken, word tag.Token) bool {
+    failedTag, _ := regexp2.MatchString(token.Tag, word.Tag)
+    failedTag = failedTag == token.Negate
+    
+    failedTok := token.re != nil && token.re.MatchStringStd(word.Text) == token.Negate
+    
+    if (token.Pattern == "" && failedTag) ||
+       (token.Tag == "" && failedTok) ||
+       (token.Tag != "" && token.Pattern != "") && (failedTag || failedTok) {
+        return false
+    }
+    return true
+}
+```
+
+## Skip Parameter
+
+The `skip` parameter creates optional token slots:
+
+```yaml
+tokens:
+  - tag: VB
+  - skip: 3      # Allow 0-3 tokens here
+  - tag: VBN
+```
+
+This matches:
+- "was written" (0 tokens between)
+- "was being written" (1 token between)
+- "was completely being written" (2 tokens between)
+
+## Multiple Message Placeholders
+
+The `%s` placeholders in messages are filled with the matched tokens:
+
+```yaml
+message: "Pattern found: '%s %s %s'"
+tokens:
+  - pattern: very
+  - tag: JJ
+  - tag: NN
+# Message becomes: "Pattern found: 'very good advice'"
+```
+
+## Performance Considerations
+
+<Note>
+The `sequence` rule uses NLP processing, which is computationally expensive:
+
+1. POS tagging is slower than regex matching
+2. Only use POS tags when necessary
+3. Use specific patterns where possible
+4. Consider limiting to specific scopes
+5. Test performance on large documents
+
+For simple patterns without grammar analysis, use `existence` or `substitution` instead.
+</Note>
+
+## Pattern vs Tag
+
+You can use either or both:
+
+```yaml
+tokens:
+  # Match any noun
+  - tag: NN
+  
+  # Match specific word
+  - pattern: 'data'
+  
+  # Match specific noun forms of "datum"
+  - tag: NN|NNS
+    pattern: 'dat(um|a)'
+```
+
+## Debugging Sequences
+
+To understand why a sequence isn't matching:
+
+1. Start with just the anchor token
+2. Add surrounding tokens one at a time
+3. Use `skip: 10` initially, then reduce
+4. Check POS tags using Vale's debug mode
+5. Test patterns separately with simpler rules
+
+## Related Rule Types
+
+- **existence**: Use for simple pattern matching without grammar
+- **conditional**: Use for presence-based dependencies
+- **repetition**: Use for consecutive repeated tokens
+- **substitution**: Use for simple pattern-to-replacement mappings

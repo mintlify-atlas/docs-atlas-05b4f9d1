@@ -1,0 +1,201 @@
+---
+title: 'CLI Output'
+description: 'Default command-line output format with colors and formatted tables'
+icon: 'terminal'
+---
+
+## Overview
+
+The CLI output format is Vale's default output style, providing a human-readable, color-coded display of linting results. This format uses tables to organize alerts and includes visual indicators for different severity levels.
+
+<Info>
+The CLI format is automatically used when running Vale without specifying an output format.
+</Info>
+
+## Output Structure
+
+The CLI output displays alerts grouped by file, with each file's results shown in a formatted table followed by a summary line.
+
+### Per-File Output
+
+For each file with alerts, Vale displays:
+
+1. An underlined file path header
+2. A table with columns for:
+   - **Location**: Line and column number (`line:column`)
+   - **Severity**: Color-coded severity level
+   - **Message**: The alert message
+   - **Check**: The rule name that triggered the alert
+
+### Color Coding
+
+<ResponseField name="error" type="color">
+  Displayed in red. These are critical issues that cause Vale to exit with a non-zero status code.
+</ResponseField>
+
+<ResponseField name="warning" type="color">
+  Displayed in yellow. These are important issues that should be addressed but don't cause a failing exit code.
+</ResponseField>
+
+<ResponseField name="suggestion" type="color">
+  Displayed in blue. These are optional improvements for your prose.
+</ResponseField>
+
+## Example Output
+
+Here's what the CLI output looks like when linting a file:
+
+```
+ /path/to/document.md
+ 12:1   error      Use 'the' instead of     Vale.Grammar
+                   'teh'.
+ 15:34  warning    Consider using a more    Vale.Readability
+                   active voice.
+ 23:5   suggestion Try using simpler         Vale.SimplerWords
+                   alternatives.
+
+✖ 1 error, 1 warning and 1 suggestion in 1 file.
+```
+
+<Note>
+The table columns are automatically sized and aligned for optimal readability. Long messages may wrap depending on terminal width.
+</Note>
+
+## Summary Line
+
+After displaying all file results, Vale prints a summary line with:
+
+- A checkmark (✔) or X (✖) symbol based on whether errors or warnings were found
+- Total count of errors, warnings, and suggestions
+- Number of files linted
+
+### Success Example
+
+```
+✔ 0 errors, 0 warnings and 3 suggestions in 5 files.
+```
+
+### Failure Example
+
+```
+✖ 2 errors, 5 warnings and 1 suggestion in 3 files.
+```
+
+<Tip>
+The summary uses singular or plural forms automatically based on the count (e.g., "1 error" vs "2 errors").
+</Tip>
+
+## Implementation Details
+
+The CLI output is implemented in `cmd/vale/color.go:15-85` and uses:
+
+- **pterm** library for colored output
+- **tablewriter** for formatted table rendering
+- Unicode symbols (✔ U+2714, ✖ U+2716) for status indicators
+
+<CodeGroup>
+
+```go Key Function
+func PrintVerboseAlerts(linted []*core.File, wrap bool) bool {
+    var errors, warnings, suggestions int
+    
+    for _, f := range linted {
+        e, w, s := printVerboseAlert(f, wrap)
+        errors += e
+        warnings += w
+        suggestions += s
+    }
+    
+    // Display summary with totals
+    etotal := fmt.Sprintf("%d %s", errors, pluralize("error", errors))
+    wtotal := fmt.Sprintf("%d %s", warnings, pluralize("warning", warnings))
+    stotal := fmt.Sprintf("%d %s", suggestions, pluralize("suggestion", suggestions))
+    
+    // Choose symbol based on severity
+    symbol := "\u2714" // checkmark
+    if errors > 0 || warnings > 0 {
+        symbol = "\u2716" // X mark
+    }
+    
+    return errors != 0
+}
+```
+
+```go Alert Formatting
+func printVerboseAlert(f *core.File, wrap bool) (int, int, int) {
+    alerts := f.SortedAlerts()
+    if len(alerts) == 0 {
+        return 0, 0, 0
+    }
+    
+    table := tablewriter.NewWriter(os.Stdout)
+    table.SetCenterSeparator("")
+    table.SetColumnSeparator("")
+    table.SetRowSeparator("")
+    table.SetAutoWrapText(!wrap)
+    
+    fmt.Printf("\n %s", pterm.Underscore.Sprint(f.Path))
+    for _, a := range alerts {
+        loc := fmt.Sprintf("%d:%d", a.Line, a.Span[0])
+        level := coloredSeverity(a.Severity)
+        table.Append([]string{loc, level, a.Message, a.Check})
+    }
+    table.Render()
+    
+    return errors, warnings, notifications
+}
+```
+
+</CodeGroup>
+
+## Configuration Options
+
+<ResponseField name="--wrap" type="boolean" default="false">
+  Controls whether text wrapping is enabled in table cells. When disabled, long messages may be truncated to fit the terminal width.
+</ResponseField>
+
+### Using Text Wrapping
+
+```bash
+vale --wrap document.md
+```
+
+<Warning>
+When text wrapping is disabled (default), very long error messages may be truncated to fit within your terminal width.
+</Warning>
+
+## Exit Code Behavior
+
+The CLI output format affects Vale's exit code:
+
+- **Exit 0**: No errors found (warnings and suggestions are OK)
+- **Exit 1**: One or more errors found
+
+<Info>
+This behavior makes Vale suitable for use in CI/CD pipelines where you want builds to fail on errors but not on warnings or suggestions.
+</Info>
+
+## Special Cases
+
+### Standard Input
+
+When linting from standard input, the summary line shows "stdin" instead of file count:
+
+```
+✖ 1 error, 0 warnings and 0 suggestions in stdin.
+```
+
+### Empty Results
+
+If a file has no alerts, no output is shown for that file. Only the final summary is displayed:
+
+```
+✔ 0 errors, 0 warnings and 0 suggestions in 3 files.
+```
+
+## Related Options
+
+- Use `--output=JSON` for machine-readable output
+- Use `--output=line` for simple line-based output
+- Use `--no-exit` to prevent Vale from exiting with error code
+- Use `--sort` to sort results by file path

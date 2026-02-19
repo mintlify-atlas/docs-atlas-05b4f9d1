@@ -1,0 +1,202 @@
+---
+title: "Vale: Linting for Prose"
+description: "A syntax-aware linter for prose that brings code-like quality checks to your documentation, helping teams maintain consistent, high-quality writing."
+---
+
+<img className="block" src="/images/hero-light.svg" alt="Vale Hero Light" />
+
+## What is Vale?
+
+Vale is a command-line tool that brings code-like linting to prose. Written in Go, it's designed to be **fast**, **cross-platform**, and **highly customizable**. Unlike traditional grammar checkers, Vale understands markup formats and can enforce your organization's specific style guidelines.
+
+<CardGroup cols={2}>
+  <Card title="Lightning Fast" icon="bolt">
+    Built with performance in mind, Vale can lint thousands of files in seconds. Benchmarks show it's significantly faster than alternatives like textlint and proselint.
+  </Card>
+  <Card title="Markup-Aware" icon="code">
+    Native support for Markdown, AsciiDoc, reStructuredText, HTML, XML, and Org. Vale intelligently excludes code snippets and understands document structure.
+  </Card>
+  <Card title="Extensible Rules" icon="puzzle-piece">
+    Create custom rules using simple YAML files. No programming required. Choose from 12 built-in rule types to enforce any style guideline.
+  </Card>
+  <Card title="No Dependencies" icon="box">
+    Stand-alone binary with zero dependencies. No need to install Python, Node.js, or any runtime environment.
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<Steps>
+  <Step title="Syntax-Aware Linting">
+    Vale parses markup formats at the AST level, avoiding false positives in code blocks, frontmatter, and other non-prose content. It can scope rules to specific elements like headings, links, or blockquotes.
+  </Step>
+  
+  <Step title="Flexible Configuration">
+    Configure Vale using `.vale.ini` files that can live in your project root or home directory. Set different styles for different file types, control which rules apply where, and adjust severity levels.
+  </Step>
+  
+  <Step title="Style as Code">
+    Vale rules are written in YAML and can be version-controlled alongside your content. Share styles across teams, contribute to community styles, or build your own from scratch.
+  </Step>
+  
+  <Step title="CI/CD Integration">
+    Vale returns appropriate exit codes and supports JSON output, making it perfect for continuous integration pipelines. Catch style issues before they reach production.
+  </Step>
+</Steps>
+
+## Why Vale?
+
+Most linters for prose fall into one of two categories:
+
+1. **Opinionated tools** that enforce a fixed set of rules you can't customize
+2. **Extensible tools** that require you to write JavaScript, Python, or Java to create rules
+
+Vale takes a different approach: it's designed from the ground up to be both extensible and accessible. With Vale, anyone can create sophisticated style rules using declarative YAML syntax.
+
+<CodeGroup>
+
+```yaml Existence Rule
+# Flag words that shouldn't appear in your content
+extends: existence
+message: "Avoid using '%s'"
+level: error
+tokens:
+  - obviously
+  - simply
+  - just
+  - easy
+```
+
+```yaml Substitution Rule
+# Suggest better alternatives
+extends: substitution
+message: "Use '%s' instead of '%s'"
+level: warning
+swap:
+  utilize: use
+  leverage: use
+  prior to: before
+```
+
+```yaml Capitalization Rule
+# Enforce title case in headings
+extends: capitalization
+message: "'%s' should be in title case"
+level: warning
+scope: heading.h1
+match: $title
+style: AP
+```
+
+</CodeGroup>
+
+## How Vale Works
+
+Vale processes your content in three stages:
+
+<Steps>
+  <Step title="Parse">
+    Vale reads your file and determines its format (Markdown, HTML, etc.). It then parses the content into an abstract syntax tree (AST), identifying prose elements versus code, metadata, and other non-prose content.
+  </Step>
+  
+  <Step title="Scope">
+    Based on your configuration and each rule's scope, Vale determines which rules apply to which parts of the document. A rule scoped to `heading` only checks headings, while `text` checks all prose.
+  </Step>
+  
+  <Step title="Lint">
+    Vale runs applicable rules against each text block, checking for pattern matches, readability metrics, spelling errors, and more. It generates alerts with line numbers, severity levels, and suggested fixes.
+  </Step>
+</Steps>
+
+## Vale's Architecture
+
+Vale is organized into several internal packages, each handling specific functionality:
+
+- **`check`**: Loads and validates YAML rules, compiles regex patterns, and manages the rule execution engine
+- **`core`**: Defines core data structures like `File`, `Alert`, and `Config`, and handles INI configuration parsing
+- **`lint`**: Manages the linting process, including format detection, AST parsing, and rule application
+- **`nlp`**: Provides natural language processing capabilities for readability metrics and tokenization
+- **`spell`**: Implements spell checking with support for Hunspell dictionaries
+
+## What You Can Build
+
+<CardGroup cols={2}>
+  <Card title="Style Guides" icon="book" href="/concepts/styles">
+    Enforce your organization's style guide: AP, Chicago, Microsoft, Google, or your own custom guidelines.
+  </Card>
+  
+  <Card title="Terminology Management" icon="language" href="/concepts/vocabularies">
+    Maintain consistent terminology across your documentation. Define accepted terms and flag deprecated alternatives.
+  </Card>
+  
+  <Card title="Readability Standards" icon="glasses" href="/reference/rules/readability">
+    Set readability targets using metrics like Flesch-Kincaid, Gunning Fog, or custom formulas.
+  </Card>
+  
+  <Card title="Inclusive Language" icon="users">
+    Identify and suggest alternatives for language that may not be inclusive or could be insensitive.
+  </Card>
+</CardGroup>
+
+## Comparison with Other Tools
+
+Vale stands out among prose linters:
+
+| Feature | Vale | textlint | proselint | write-good |
+|---------|------|----------|-----------|------------|
+| **Extensible** | Yes (YAML) | Yes (JavaScript) | No | Yes (JavaScript) |
+| **Markup Support** | Markdown, AsciiDoc, RST, HTML, XML, Org | Markdown, AsciiDoc, RST, HTML | Plain text only | Plain text only |
+| **Spell Checking** | Yes | Via plugins | No | No |
+| **Performance** | Excellent | Good | Good | Good |
+| **Dependencies** | None | Node.js | Python | Node.js |
+| **License** | MIT | MIT | BSD 3-Clause | MIT |
+
+<Note>
+Benchmarks show Vale is significantly faster than alternatives. On a corpus of 1,500 Markdown files, Vale completes in under 2 seconds while comparable tools take 10-30 seconds.
+</Note>
+
+## Real-World Usage
+
+Vale is used by documentation teams at:
+
+- **GitLab**: Enforcing their documentation style guide across thousands of pages
+- **Spotify**: Maintaining consistency in technical documentation
+- **Homebrew**: Ensuring formula descriptions follow conventions
+- **Linode**: Checking technical tutorials and guides
+- **And hundreds more**: From startups to enterprises
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Vale on macOS, Linux, or Windows in minutes.
+  </Card>
+  
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get Vale running on your first project in under 5 minutes.
+  </Card>
+  
+  <Card title="Core Concepts" icon="lightbulb" href="/concepts/styles">
+    Learn about styles, scoping, and configuration.
+  </Card>
+  
+  <Card title="Writing Rules" icon="pencil" href="/guides/writing-rules">
+    Create your first custom Vale rule.
+  </Card>
+</CardGroup>
+
+## Community and Support
+
+<CardGroup cols={3}>
+  <Card title="GitHub" icon="github" href="https://github.com/errata-ai/vale">
+    Source code, issues, and discussions
+  </Card>
+  
+  <Card title="Package Hub" icon="box" href="https://vale.sh/hub/">
+    Pre-built style packages for popular style guides
+  </Card>
+  
+  <Card title="Rule Explorer" icon="search" href="https://vale.sh/explorer/">
+    Browse and test rules interactively
+  </Card>
+</CardGroup>

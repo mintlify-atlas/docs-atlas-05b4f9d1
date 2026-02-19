@@ -1,0 +1,147 @@
+---
+title: Occurrence
+description: Enforce limits on token frequency
+---
+
+The `occurrence` rule type counts how many times a specific pattern appears and enforces minimum or maximum thresholds. This is useful for enforcing style guidelines about frequency of certain elements.
+
+## How It Works
+
+The `occurrence` rule searches for all instances of a token pattern and counts them. If the count exceeds `max` or falls below `min`, it triggers an alert.
+
+## Parameters
+
+<ParamField path="token" type="string" required>
+  A regular expression pattern to search for and count.
+</ParamField>
+
+<ParamField path="max" type="integer">
+  The maximum number of times the token can appear. If the count exceeds this, an alert is triggered.
+</ParamField>
+
+<ParamField path="min" type="integer">
+  The minimum number of times the token must appear. If the count is below this, an alert is triggered.
+</ParamField>
+
+<ParamField path="ignorecase" type="boolean" default="false">
+  Makes the pattern matching case-insensitive when set to `true`.
+</ParamField>
+
+## Examples
+
+### Character Count Limit
+
+Limit heading length by counting characters:
+
+```yaml
+extends: occurrence
+message: "Topic titles should use fewer than 70 characters."
+scope: heading & ~heading.h1
+level: warning
+max: 70
+token: .
+```
+
+### Sentence Length
+
+Ensure sentences aren't too long:
+
+```yaml
+extends: occurrence
+message: "Try to keep sentences to a maximum of 25 words."
+scope: sentence
+level: suggestion
+max: 25
+token: '\b\w+\b'
+```
+
+### Comma Count
+
+Limit the number of commas per sentence for readability:
+
+```yaml
+extends: occurrence
+message: "Too many commas in this sentence."
+scope: sentence
+level: warning
+max: 3
+token: ','
+```
+
+### Paragraph Length
+
+Enforce minimum paragraph length:
+
+```yaml
+extends: occurrence
+message: "Paragraphs should have at least 3 sentences."
+scope: paragraph
+level: suggestion
+min: 3
+token: '[.!?]'
+```
+
+### Minimum Word Count
+
+Ensure documents aren't too short:
+
+```yaml
+extends: occurrence
+message: "This section needs at least 100 words."
+scope: text
+level: warning
+min: 100
+token: '\b\w+\b'
+```
+
+## Use Cases
+
+<Info>
+The `occurrence` rule is ideal for:
+- Enforcing character limits on headings
+- Limiting sentence complexity (word count)
+- Ensuring minimum content length
+- Counting specific punctuation marks
+- Validating document structure requirements
+</Info>
+
+## Scope Considerations
+
+<Note>
+The `occurrence` rule is scope-dependent. The token count is calculated within each matched scope. For example, with `scope: sentence`, each sentence is evaluated independently.
+</Note>
+
+## Technical Details
+
+Internally, the `occurrence` rule (internal/check/occurrence.go:52-114):
+
+1. Compiles the token pattern into a regex
+2. Finds all matches within the scoped text using `FindAllStringIndex`
+3. Counts the number of matches
+4. Compares the count against `max` or `min` thresholds
+5. If violated, creates an alert at the first non-code match
+
+Special behavior when count is 0:
+- If `min` is set and no matches are found, the alert is placed at line 1
+- This makes the rule effectively document-scoped
+
+The rule filters out code-like tokens to avoid false positives, checking each match with `core.IsCode()` before using it as the alert location.
+
+## Zero Occurrence Handling
+
+When a rule requires a minimum occurrence (`min > 0`) but finds zero matches, the alert is placed at the beginning of the document (line 1, column 1) since there's no specific location to highlight.
+
+```yaml
+extends: occurrence
+message: "Missing required heading structure."
+scope: heading
+level: error
+min: 1
+token: '## Overview'
+```
+
+## Related Rule Types
+
+- **existence**: Use when you only care about presence/absence, not frequency
+- **repetition**: Use when you want to detect consecutive repeated words
+- **metric**: Use for more complex calculations involving multiple variables

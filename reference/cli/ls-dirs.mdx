@@ -1,0 +1,348 @@
+---
+title: "vale ls-dirs"
+description: "Print default configuration directories and their status."
+---
+
+The `ls-dirs` command displays the default directories Vale uses for configuration, styles, and native messaging, along with whether each location exists.
+
+## Usage
+
+```bash
+vale ls-dirs
+```
+
+By default, the command outputs a formatted table. Use `--output=JSON` for machine-readable output.
+
+## Default Output
+
+The command displays a table with three locations:
+
+```
+Asset         Default Location                           Found
+StylesPath    /home/user/.local/share/vale/styles        ✓
+.vale.ini     /home/user/.config/vale/.vale.ini          ✗
+vale-native   /home/user/.local/share/vale/vale-native   ✗
+```
+
+<Info>
+  A green checkmark (✓) indicates the path exists. A red X (✗) means it doesn't.
+</Info>
+
+## Directory Locations
+
+<ParamField path="StylesPath" type="string">
+  **Default styles directory**
+  
+  The global location where Vale looks for style packages when no project-specific `StylesPath` is configured.
+  
+  Platform-specific defaults:
+  - **Linux**: `~/.local/share/vale/styles`
+  - **macOS**: `~/Library/Application Support/vale/styles`
+  - **Windows**: `%LOCALAPPDATA%\vale\styles`
+  
+  You can override this with the `VALE_STYLES_PATH` environment variable.
+</ParamField>
+
+<ParamField path=".vale.ini" type="string">
+  **Global configuration file**
+  
+  The default location for a user-wide Vale configuration.
+  
+  Platform-specific defaults:
+  - **Linux**: `~/.config/vale/.vale.ini`
+  - **macOS**: `~/Library/Application Support/vale/.vale.ini`
+  - **Windows**: `%APPDATA%\vale\.vale.ini`
+  
+  Vale loads this configuration for all projects unless:
+  - A project-specific `.vale.ini` exists
+  - You use `--config` to specify a different file
+  - You use `--no-global` to skip global configuration
+  
+  You can override this with the `VALE_CONFIG_PATH` environment variable.
+</ParamField>
+
+<ParamField path="vale-native" type="string">
+  **Native messaging host executable**
+  
+  The location of the Vale native messaging host for browser extensions.
+  
+  Platform-specific defaults:
+  - **Linux**: `~/.local/share/vale/vale-native`
+  - **macOS**: `~/Library/Application Support/vale/vale-native`
+  - **Windows**: `%LOCALAPPDATA%\vale\vale-native.exe`
+  
+  This is only relevant if you're using Vale's browser integration features.
+</ParamField>
+
+## JSON Output
+
+For programmatic access, use JSON output:
+
+```bash
+vale --output=JSON ls-dirs
+```
+
+Output:
+```json
+{
+  "StylesPath": "/home/user/.local/share/vale/styles",
+  ".vale.ini": "/home/user/.config/vale/.vale.ini",
+  "vale-native": "/home/user/.local/share/vale/vale-native"
+}
+```
+
+<Note>
+  JSON output includes the paths but not the existence status. You'll need to check file existence separately.
+</Note>
+
+## Use Cases
+
+### Verify Installation
+
+Check if Vale's default directories are set up:
+
+```bash
+vale ls-dirs
+```
+
+If `StylesPath` shows ✗, create it and sync packages:
+
+```bash
+mkdir -p "$(vale --output=JSON ls-dirs | jq -r '.StylesPath')"
+vale sync
+```
+
+### Find Global Configuration
+
+Locate your global `.vale.ini` file:
+
+```bash
+vale --output=JSON ls-dirs | jq -r '.".vale.ini"'
+```
+
+Output:
+```
+/home/user/.config/vale/.vale.ini
+```
+
+### Set Up Global Configuration
+
+Create a global configuration file:
+
+```bash
+# Get the config path
+CONFIG_PATH=$(vale --output=JSON ls-dirs | jq -r '.".vale.ini"')
+
+# Create directory
+mkdir -p "$(dirname "$CONFIG_PATH")"
+
+# Create configuration
+cat > "$CONFIG_PATH" << EOF
+StylesPath = $(vale --output=JSON ls-dirs | jq -r '.StylesPath')
+MinAlertLevel = suggestion
+
+Packages = https://github.com/errata-ai/Microsoft/releases/latest/download/Microsoft.zip
+
+[*]
+BasedOnStyles = Vale, Microsoft
+EOF
+
+# Sync packages
+vale sync
+```
+
+### Check in Scripts
+
+Verify Vale directories exist before running operations:
+
+```bash
+#!/bin/bash
+STYLES_PATH=$(vale --output=JSON ls-dirs | jq -r '.StylesPath')
+
+if [ ! -d "$STYLES_PATH" ]; then
+  echo "Error: Styles directory not found. Run 'vale sync' first."
+  exit 1
+fi
+
+vale .
+```
+
+## Examples
+
+<CodeGroup>
+```bash View directories
+vale ls-dirs
+```
+
+```bash JSON output
+vale --output=JSON ls-dirs
+```
+
+```bash Get styles path
+vale --output=JSON ls-dirs | jq -r '.StylesPath'
+```
+
+```bash Get config path
+vale --output=JSON ls-dirs | jq -r '.".vale.ini"'
+```
+
+```bash Check if styles exist
+STYLES=$(vale --output=JSON ls-dirs | jq -r '.StylesPath')
+if [ -d "$STYLES" ]; then
+  echo "Styles directory exists"
+fi
+```
+</CodeGroup>
+
+## Environment Variables
+
+You can override default directory locations with environment variables:
+
+<Tabs>
+  <Tab title="VALE_STYLES_PATH">
+    Override the default styles directory:
+    
+    ```bash
+    export VALE_STYLES_PATH=/custom/styles/path
+    vale ls-dirs
+    ```
+    
+    The `StylesPath` entry will show your custom path.
+  </Tab>
+  
+  <Tab title="VALE_CONFIG_PATH">
+    Override the default global configuration file:
+    
+    ```bash
+    export VALE_CONFIG_PATH=/custom/config/.vale.ini
+    vale ls-dirs
+    ```
+    
+    The `.vale.ini` entry will show your custom path.
+  </Tab>
+</Tabs>
+
+## Platform Differences
+
+Default paths follow platform conventions:
+
+<Tabs>
+  <Tab title="Linux">
+    ```bash
+    vale ls-dirs
+    ```
+    
+    ```
+    Asset         Default Location                           Found
+    StylesPath    /home/user/.local/share/vale/styles        ✓
+    .vale.ini     /home/user/.config/vale/.vale.ini          ✓
+    vale-native   /home/user/.local/share/vale/vale-native   ✗
+    ```
+    
+    Follows XDG Base Directory specification.
+  </Tab>
+  
+  <Tab title="macOS">
+    ```bash
+    vale ls-dirs
+    ```
+    
+    ```
+    Asset         Default Location                                      Found
+    StylesPath    /Users/user/Library/Application Support/vale/styles   ✓
+    .vale.ini     /Users/user/Library/Application Support/vale/.vale.ini ✓
+    vale-native   /Users/user/Library/Application Support/vale/vale-native ✗
+    ```
+    
+    Uses macOS Application Support directory.
+  </Tab>
+  
+  <Tab title="Windows">
+    ```bash
+    vale ls-dirs
+    ```
+    
+    ```
+    Asset         Default Location                             Found
+    StylesPath    C:\Users\user\AppData\Local\vale\styles      ✓
+    .vale.ini     C:\Users\user\AppData\Roaming\vale\.vale.ini  ✓
+    vale-native   C:\Users\user\AppData\Local\vale\vale-native.exe ✗
+    ```
+    
+    Uses Windows AppData directories.
+  </Tab>
+</Tabs>
+
+## Directory Structure
+
+A typical Vale installation with both global and project configurations:
+
+```
+# Global directories
+~/.config/vale/
+└── .vale.ini                    # Global configuration
+
+~/.local/share/vale/
+└── styles/                      # Global styles
+    ├── Microsoft/
+    ├── Google/
+    └── Vale/
+
+# Project directories
+/project/
+├── .vale.ini                    # Project configuration
+└── styles/                      # Project styles
+    └── CompanyStyle/
+```
+
+<Info>
+  Project-specific configurations take precedence over global configuration, allowing you to customize Vale per project while maintaining global defaults.
+</Info>
+
+## Troubleshooting
+
+### Styles Not Found
+
+If Vale can't find styles:
+
+1. Check the styles directory exists:
+   ```bash
+   vale ls-dirs
+   ```
+
+2. Verify styles are installed:
+   ```bash
+   ls "$(vale --output=JSON ls-dirs | jq -r '.StylesPath')"
+   ```
+
+3. Run sync if needed:
+   ```bash
+   vale sync
+   ```
+
+### Configuration Not Loaded
+
+If global configuration isn't being used:
+
+1. Check if the file exists:
+   ```bash
+   vale ls-dirs
+   ```
+
+2. View the actual path:
+   ```bash
+   vale --output=JSON ls-dirs | jq -r '.".vale.ini"'
+   ```
+
+3. Create it if missing:
+   ```bash
+   CONFIG=$(vale --output=JSON ls-dirs | jq -r '.".vale.ini"')
+   mkdir -p "$(dirname "$CONFIG")"
+   touch "$CONFIG"
+   ```
+
+## Related Commands
+
+- [ls-vars](/reference/cli/ls-vars) - View environment variables that affect directories
+- [ls-config](/reference/cli/ls-config) - View loaded configuration
+- [sync](/reference/cli/sync) - Install packages to styles directory

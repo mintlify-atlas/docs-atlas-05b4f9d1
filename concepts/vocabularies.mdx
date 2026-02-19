@@ -1,0 +1,549 @@
+---
+title: "Vocabularies"
+description: "Manage project-specific terminology with Vale vocabularies"
+---
+
+Vocabularies let you define project-specific terminology that Vale should accept or reject. They provide a centralized way to maintain custom dictionaries without modifying style rules.
+
+## What is a vocabulary?
+
+A vocabulary is a directory containing two text files:
+
+- `accept.txt`: Terms that are always correct
+- `reject.txt`: Terms that should never be used
+
+Vale automatically integrates vocabulary terms with its spelling, substitution, and existence checks.
+
+## Creating a vocabulary
+
+Create a directory structure under your `StylesPath`:
+
+```
+styles/
+└── config/
+    └── vocabularies/
+        └── MyProject/
+            ├── accept.txt
+            └── reject.txt
+```
+
+### accept.txt format
+
+List terms to accept, one per line:
+
+```text
+# Technical terms
+API
+SDK
+OAuth
+WebSocket
+
+# Product names
+MyProduct
+FeatureX
+
+# Regex patterns (start with lowercase letter for pattern detection)
+(?i)GitHub
+[Oo]bservability
+[pP]y.*\b
+
+# Comments are ignored
+```
+
+<Accordion title="Accepted patterns">
+  - **Plain text**: Exact matches (e.g., `GitHub`)
+  - **Regex patterns**: Any valid regular expression
+  - **Case-insensitive**: Use `(?i)` flag (e.g., `(?i)GitHub` matches "github", "GITHUB", "GitHub")
+  - **Comments**: Lines starting with `#` are ignored
+  - **Blank lines**: Ignored
+
+  From Vale source (`testdata/fixtures/vocab/styles/config/vocabularies/Basic/accept.txt`):
+  ```text
+  (?i)GitHub
+  [Oo]bservability
+  [pP]y.*\b
+  # This is a comment
+  ABC-DEF
+  ABCDEF
+  definately
+  Documentarians
+  Log4j
+  PLuG
+  ```
+</Accordion>
+
+### reject.txt format
+
+List terms to reject, one per line:
+
+```text
+# Avoid these phrases
+mac OS X
+
+# Outdated terms
+master/slave
+whitelist/blacklist
+```
+
+From Vale source (`testdata/fixtures/vocab/styles/config/vocabularies/Basic/reject.txt`):
+```text
+Mac OS X
+```
+
+<Info>
+  Keep `reject.txt` simple. For sophisticated term replacement, create a `substitution` rule in your style instead.
+</Info>
+
+## Activating a vocabulary
+
+Activate vocabularies in your `.vale.ini` file:
+
+```ini
+StylesPath = styles
+Vocab = MyProject
+
+[*.md]
+BasedOnStyles = Vale
+```
+
+Vale loads terms from `styles/config/vocabularies/MyProject/`.
+
+### Multiple vocabularies
+
+Combine multiple vocabularies:
+
+```ini
+Vocab = Base, Marketing, Engineering
+```
+
+Vale merges terms from all specified vocabularies. If the same term appears in multiple vocabularies with different statuses (accept vs. reject), the last vocabulary wins.
+
+## How vocabularies integrate with rules
+
+Vocabularies automatically affect three built-in Vale rules:
+
+<Tabs>
+  <Tab title="Vale.Spelling">
+    Terms in `accept.txt` are added to the spelling dictionary.
+
+    ```yaml
+    # Built-in rule (Vale.Spelling)
+    extends: spelling
+    message: "Did you really mean '%s'?"
+    level: error
+    ```
+
+    If your `accept.txt` contains:
+    ```text
+    OAuth
+    WebSocket
+    gRPC
+    ```
+
+    Vale won't flag these as misspellings.
+  </Tab>
+
+  <Tab title="Vale.Terms">
+    Terms in `reject.txt` are added to the term substitution list.
+
+    ```yaml
+    # Built-in rule (Vale.Terms)
+    extends: substitution
+    message: "Use '%s' instead of '%s'"
+    level: error
+    ```
+
+    The rule suggests removing rejected terms, but doesn't provide automatic replacements. For replacements, use a custom substitution rule.
+  </Tab>
+
+  <Tab title="Vale.Avoid">
+    Works similarly to `Vale.Terms` for simple existence checks.
+
+    ```yaml
+    # Built-in rule (Vale.Avoid)
+    extends: existence
+    message: "Avoid using '%s'"
+    level: error
+    ```
+  </Tab>
+</Tabs>
+
+## Using vocabularies in custom rules
+
+Custom rules can access vocabulary terms via the `vocab` option:
+
+```yaml
+extends: existence
+message: "Avoid using '%s'"
+level: warning
+vocab: true  # Use vocabulary as exceptions
+tokens:
+  - regex
+  - really
+  - just
+```
+
+With `vocab: true`, terms in your `accept.txt` are automatically added to the rule's exceptions list.
+
+From `internal/check/definition.go:42`, most rules default to `Vocab: true`:
+
+```go
+func NewExistence(cfg *core.Config, generic baseCheck, path string) (Existence, error) {
+    rule := Existence{Vocab: true}  // Default behavior
+    // ...
+    re, err := updateExceptions(rule.Exceptions, cfg.AcceptedTokens, rule.Vocab)
+}
+```
+
+<Accordion title="Disabling vocabulary integration">
+  Set `vocab: false` to prevent vocabulary terms from affecting a rule:
+
+  ```yaml
+  extends: existence
+  message: "No abbreviations allowed"
+  vocab: false  # Ignore vocabulary
+  tokens:
+    - API
+    - SDK
+  ```
+
+  Now the rule flags "API" and "SDK" even if they're in `accept.txt`.
+</Accordion>
+
+## Vocabulary loading
+
+Vale loads vocabularies during initialization:
+
+<Steps>
+  <Step title="Parse configuration">
+    Vale reads the `Vocab` key from `.vale.ini` and identifies which vocabularies to load.
+  </Step>
+
+  <Step title="Locate directories">
+    For each vocabulary name, Vale searches for `config/vocabularies/{name}/` under each `StylesPath`.
+  </Step>
+
+  <Step title="Read files">
+    Vale reads `accept.txt` and `reject.txt` from each vocabulary directory.
+
+    From `internal/core/ini.go:29-58`:
+    ```go
+    func loadVocab(root string, cfg *Config) error {
+        target := ""
+        for _, p := range cfg.SearchPaths() {
+            opt := filepath.Join(p, VocabDir, root)
+            if system.IsDir(opt) {
+                target = opt
+                break
+            }
+        }
+
+        err := system.Walk(target, func(fp string, info fs.FileInfo, err error) error {
+            name := info.Name()
+            if name == "accept.txt" {
+                return cfg.AddWordListFile(fp, true)
+            } else if name == "reject.txt" {
+                return cfg.AddWordListFile(fp, false)
+            }
+            return nil
+        })
+    }
+    ```
+  </Step>
+
+  <Step title="Merge and compile">
+    Vale merges terms from all vocabularies and compiles them into regular expressions for efficient matching.
+
+    From `internal/check/definition.go:341-373`:
+    ```go
+    func updateExceptions(previous []string, current []string, vocab bool) (*regexp2.Regexp, error) {
+        if vocab {
+            previous = append(previous, current...)
+        }
+
+        // Sort by length for greedy alternation
+        sort.Slice(previous, func(p, q int) bool {
+            return len(previous[p]) > len(previous[q])
+        })
+
+        // Add (?-i) to terms without (?i) flag
+        for i, term := range previous {
+            if !strings.HasPrefix(term, "(?i)") {
+                previous[i] = fmt.Sprintf("(?-i)%s", term)
+            }
+        }
+
+        regex := fmt.Sprintf(regex, strings.Join(previous, "|"))
+        return regexp2.CompileStd(regex)
+    }
+    ```
+  </Step>
+</Steps>
+
+## Examples
+
+<Tabs>
+  <Tab title="Software project">
+    ```
+    styles/config/vocabularies/MyApp/
+    ├── accept.txt
+    └── reject.txt
+    ```
+
+    **accept.txt:**
+    ```text
+    # API terms
+    REST
+    GraphQL
+    WebSocket
+    OAuth2
+    JWT
+
+    # Product names
+    MyApp
+    FeatureX
+    ModuleY
+
+    # Technical abbreviations
+    (?i)API
+    SDK
+    CLI
+    ```
+
+    **reject.txt:**
+    ```text
+    # Outdated terms
+    REST API endpoint
+    master branch
+    slave server
+    ```
+
+    **Configuration:**
+    ```ini
+    StylesPath = styles
+    Vocab = MyApp
+
+    [*.md]
+    BasedOnStyles = Vale, Microsoft
+    ```
+  </Tab>
+
+  <Tab title="Marketing content">
+    ```
+    styles/config/vocabularies/Marketing/
+    ├── accept.txt
+    └── reject.txt
+    ```
+
+    **accept.txt:**
+    ```text
+    # Brand names
+    Acme Corp
+    SuperWidget
+
+    # Product features
+    SmartSync
+    AutoScale
+    CloudBurst
+
+    # Industry terms
+    (?i)B2B
+    (?i)B2C
+    SaaS
+    ```
+
+    **reject.txt:**
+    ```text
+    # Competitor names
+    CompetitorX
+
+    # Discouraged phrasing
+    game-changing
+    revolutionary
+    ```
+  </Tab>
+
+  <Tab title="Multi-vocabulary setup">
+    ```
+    styles/config/vocabularies/
+    ├── Base/
+    │   ├── accept.txt
+    │   └── reject.txt
+    ├── Legal/
+    │   ├── accept.txt
+    │   └── reject.txt
+    └── Technical/
+        ├── accept.txt
+        └── reject.txt
+    ```
+
+    **Configuration:**
+    ```ini
+    StylesPath = styles
+    Vocab = Base, Technical
+
+    [legal/*.md]
+    Vocab = Base, Legal
+
+    [docs/*.md]
+    Vocab = Base, Technical
+    ```
+
+    Different document types use different vocabulary combinations.
+  </Tab>
+</Tabs>
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Keep vocabularies focused">
+    Separate vocabularies by domain:
+    - `Base`: Common terms across all content
+    - `API`: API-specific terminology
+    - `Legal`: Legal and compliance terms
+    - `Marketing`: Brand and marketing language
+
+    This makes vocabularies reusable across projects and easier to maintain.
+  </Accordion>
+
+  <Accordion title="Use regex patterns sparingly">
+    Regex patterns are powerful but can slow down Vale's performance:
+
+    ```text
+    # Good: specific pattern
+    (?i)GitHub
+
+    # Avoid: overly broad pattern
+    .*[Tt]ech.*
+    ```
+
+    Use plain text entries when possible.
+  </Accordion>
+
+  <Accordion title="Document your vocabulary">
+    Add comments explaining why terms are included:
+
+    ```text
+    # Product names (trademarked)
+    MyProduct
+    FeatureX
+
+    # Industry-standard abbreviations
+    API
+    SDK
+
+    # Internal codenames (temporary - review quarterly)
+    ProjectPhoenix
+    ```
+  </Accordion>
+
+  <Accordion title="Keep reject.txt minimal">
+    Use `reject.txt` for terms that are universally wrong in your context. For nuanced replacements, create substitution rules:
+
+    ```yaml
+    # Better as a rule:
+    extends: substitution
+    message: "Use '%s' instead of '%s'"
+    swap:
+      utilize: use
+      leverage: use
+    ```
+  </Accordion>
+
+  <Accordion title="Version control vocabularies">
+    Commit vocabularies to version control alongside your styles:
+
+    ```bash
+    git add styles/config/vocabularies/
+    git commit -m "Add OAuth to accepted terms"
+    ```
+
+    This keeps terminology in sync with your content.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Vocabulary not loading">
+    **Check the directory structure:**
+    ```bash
+    vale ls-config
+    ```
+
+    Look for "AcceptedTokens" and "RejectedTokens" in the output. If empty, Vale isn't finding your vocabulary.
+
+    **Common issues:**
+    - Wrong directory name (must match `Vocab` value in config)
+    - Missing `config/vocabularies/` intermediate directories
+    - Files named incorrectly (must be `accept.txt` and `reject.txt`)
+  </Accordion>
+
+  <Accordion title="Terms still flagged">
+    If Vale still flags terms in `accept.txt`:
+
+    1. **Check the rule**: Some rules set `vocab: false`
+    2. **Verify the term format**: Ensure proper escaping for special characters
+    3. **Check rule scope**: The rule might not apply to your content's scope
+    4. **Reload Vale**: Restart your editor or Vale server after changing vocabulary files
+  </Accordion>
+
+  <Accordion title="Regex pattern not matching">
+    Test your regex pattern:
+
+    ```bash
+    # Create a test file
+    echo "GitHub" > test.txt
+
+    # Add a test rule
+    cat > styles/Test/Pattern.yml <<EOF
+    extends: existence
+    message: "Found '%s'"
+    tokens:
+      - '(?i)GitHub'
+    EOF
+
+    # Test
+    vale test.txt
+    ```
+
+    If the pattern works in the rule but not in the vocabulary, check for special characters that need escaping.
+  </Accordion>
+</AccordionGroup>
+
+## Advanced usage
+
+<Accordion title="Conditional vocabulary loading">
+  Use different vocabularies for different file types:
+
+  ```ini
+  StylesPath = styles
+
+  [docs/**/*.md]
+  Vocab = Base, Technical
+
+  [blog/**/*.md]
+  Vocab = Base, Marketing
+
+  [legal/**/*.md]
+  Vocab = Base, Legal
+  ```
+</Accordion>
+
+<Accordion title="Shared vocabularies across projects">
+  Use a shared styles directory:
+
+  ```ini
+  # Project A
+  StylesPath = /shared/vale-styles
+  Vocab = CompanyWide, ProjectA
+
+  # Project B
+  StylesPath = /shared/vale-styles
+  Vocab = CompanyWide, ProjectB
+  ```
+
+  Both projects share `CompanyWide` vocabulary while maintaining project-specific terms.
+</Accordion>
+
+Implementation reference: `internal/core/ini.go:29-58`, `internal/core/config.go:324-346`, `internal/check/definition.go:341-373`

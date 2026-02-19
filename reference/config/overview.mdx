@@ -1,0 +1,297 @@
+---
+title: Configuration Overview
+description: Understanding Vale's .vale.ini configuration file structure and hierarchy.
+---
+
+Vale uses an INI-style configuration file named `.vale.ini` to define how it processes your documentation. This file controls everything from which styles to apply to how different file formats are handled.
+
+## Configuration File Location
+
+Vale searches for configuration files in the following order:
+
+1. **Command-line flag**: Specified via `--config`
+2. **Environment variable**: Set via `VALE_CONFIG_PATH`
+3. **Local search**: Walk up directory tree from current directory
+4. **Home directory**: Check for `.vale.ini` in your home directory
+5. **Global config**: User config directory (loaded in addition to other sources)
+
+The search process stops at the first `.vale.ini` file found (except for the global config, which is always loaded if present).
+
+<Note>
+Vale supports multiple file names for backwards compatibility: `.vale`, `_vale`, `vale.ini`, `.vale.ini`, and `_vale.ini`. However, `.vale.ini` is the recommended and documented standard.
+</Note>
+
+## File Structure
+
+A `.vale.ini` file consists of three main sections:
+
+### Core Section
+
+The unnamed section at the top defines global configuration:
+
+```ini
+StylesPath = .github/styles
+MinAlertLevel = suggestion
+Vocab = ProjectName
+Packages = Google, Microsoft
+```
+
+### Global Section
+
+The `[*]` section defines settings that apply to all files:
+
+```ini
+[*]
+BasedOnStyles = Vale, Google
+Vale.Spelling = YES
+```
+
+### Syntax-Specific Sections
+
+Sections with glob patterns define settings for specific file types:
+
+```ini
+[*.md]
+BasedOnStyles = Vale, Google
+
+[*.{rst,adoc}]
+BasedOnStyles = Vale, Joblint
+
+[docs/*.md]
+Vale.Spelling = NO
+```
+
+## Core Configuration Options
+
+These options must be defined in the core section (before any `[section]` headers).
+
+<ParamField path="StylesPath" type="string" required>
+  The path to your styles directory. Can be absolute or relative to the config file.
+  
+  ```ini
+  StylesPath = .github/styles
+  ```
+</ParamField>
+
+<ParamField path="MinAlertLevel" type="string" default="suggestion">
+  Minimum alert level to display. Must be one of: `suggestion`, `warning`, or `error`.
+  
+  ```ini
+  MinAlertLevel = warning
+  ```
+</ParamField>
+
+<ParamField path="Vocab" type="string | array">
+  Project vocabulary to load from `config/vocabularies/[name]/`. Supports multiple vocabularies separated by commas.
+  
+  ```ini
+  Vocab = ProjectName, Acronyms
+  ```
+  
+  See the [Vocabularies documentation](/concepts/vocabularies) for more details.
+</ParamField>
+
+<ParamField path="Packages" type="array">
+  External configuration packages to install via `vale sync`. Comma-separated list of package names or URLs.
+  
+  ```ini
+  Packages = Google, Microsoft, https://example.com/style.zip
+  ```
+  
+  See the [Packages documentation](/advanced/packages) for more details.
+</ParamField>
+
+<ParamField path="IgnoredScopes" type="array">
+  HTML/markup scopes to ignore completely. Vale will not process text within these scopes.
+  
+  ```ini
+  IgnoredScopes = code, tt, script
+  ```
+</ParamField>
+
+<ParamField path="SkippedScopes" type="array">
+  HTML/markup blocks to skip. Similar to `IgnoredScopes` but applies to block-level elements.
+  
+  ```ini
+  SkippedScopes = script, style, pre, figure, blockquote
+  ```
+</ParamField>
+
+<ParamField path="IgnoredClasses" type="array">
+  HTML classes to ignore. Elements with these classes will not be processed.
+  
+  ```ini
+  IgnoredClasses = no-prose, skip-vale
+  ```
+</ParamField>
+
+<ParamField path="WordTemplate" type="string">
+  Template for converting YAML lists to regular expressions. Used by style rules that reference vocabulary files.
+  
+  ```ini
+  WordTemplate = \\b(?:%s)\\b
+  ```
+</ParamField>
+
+<ParamField path="NLPEndpoint" type="string">
+  External API endpoint for NLP-related processing. Used by advanced rules that require natural language processing.
+  
+  ```ini
+  NLPEndpoint = http://localhost:8080/nlp
+  ```
+</ParamField>
+
+## Global Options
+
+These options can be defined in the `[*]` section or in syntax-specific sections.
+
+<ParamField path="BasedOnStyles" type="array">
+  Styles to load from your `StylesPath`. Comma-separated list of style names.
+  
+  ```ini
+  [*]
+  BasedOnStyles = Vale, Google
+  ```
+</ParamField>
+
+<ParamField path="BlockIgnores" type="array">
+  Regular expression patterns for blocks of text to ignore.
+  
+  ```ini
+  [*.md]
+  BlockIgnores = (?s)```.*?```
+  ```
+</ParamField>
+
+<ParamField path="TokenIgnores" type="array">
+  Regular expression patterns for inline tokens to ignore.
+  
+  ```ini
+  [*.md]
+  TokenIgnores = ({%.+?%}), ({{.+?}})
+  ```
+</ParamField>
+
+## Syntax-Specific Options
+
+These options can only be defined in syntax-specific sections (e.g., `[*.md]`).
+
+<ParamField path="Transform" type="string">
+  Path to an XSLT stylesheet for transforming XML files before processing.
+  
+  ```ini
+  [*.xml]
+  Transform = .vale/transform.xsl
+  ```
+</ParamField>
+
+<ParamField path="Lang" type="string">
+  Language identifier for syntax highlighting and language-specific processing.
+  
+  ```ini
+  [*.mdx]
+  Lang = javascript
+  ```
+</ParamField>
+
+<ParamField path="CommentDelimiters" type="array">
+  Start and end delimiters for comment blocks. Must be exactly two values.
+  
+  ```ini
+  [*.c]
+  CommentDelimiters = {/*, */}
+  ```
+</ParamField>
+
+<ParamField path="View" type="string">
+  Custom view definition from `config/views/[name].yml` for extracting specific content from structured files.
+  
+  ```ini
+  [*.json]
+  View = APISchema
+  ```
+</ParamField>
+
+## Rule Configuration
+
+Individual rules can be enabled or disabled at both global and syntax-specific levels:
+
+```ini
+[*]
+Vale.Spelling = YES
+Google.Headings = error
+
+[*.md]
+Vale.Spelling = NO
+Google.Passive = warning
+Microsoft.Contractions = suggestion
+```
+
+<Info>
+Rule levels can be `YES`, `NO`, `suggestion`, `warning`, or `error`. The `YES` value inherits the level from the rule definition, while specific levels override it.
+</Info>
+
+## Configuration Hierarchy
+
+When multiple configuration sources are present, they are merged in this order:
+
+1. **Project config** (from local search or flags)
+2. **Default styles** (if `VALE_STYLES_PATH` is set)
+3. **Global config** (from user config directory)
+4. **Command-line flags** (override all other settings)
+
+Later sources override earlier ones for conflicting options, while arrays are merged.
+
+## Example Configuration
+
+Here's a complete example showing common configuration patterns:
+
+```ini
+# Core settings
+StylesPath = .github/styles
+MinAlertLevel = suggestion
+
+Vocab = MyProject
+Packages = Microsoft, Google
+
+IgnoredScopes = code, tt
+SkippedScopes = script, style, pre
+
+# Formats mapping
+[formats]
+ts = js
+mdx = md
+
+# Global rules
+[*]
+BasedOnStyles = Vale
+
+# Markdown files
+[*.md]
+BasedOnStyles = Vale, Microsoft
+TokenIgnores = ({%.+?%})
+
+# Documentation directory
+[docs/*.md]
+BasedOnStyles = Vale, Microsoft, Google
+Microsoft.Contractions = NO
+
+# Code comments
+[*.{js,ts}]
+BasedOnStyles = Vale
+Vale.Spelling = YES
+```
+
+## Configuration Validation
+
+Validate your configuration with:
+
+```bash
+vale ls-config
+```
+
+This prints your merged configuration as JSON, showing exactly how Vale interprets your settings.
+
+<Tip>
+Use `vale ls-dirs` to see where Vale looks for configuration files and related assets on your system.
+</Tip>

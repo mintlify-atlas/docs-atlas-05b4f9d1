@@ -1,0 +1,384 @@
+---
+title: "Installation"
+description: "Install Vale on macOS, Linux, or Windows using your preferred package manager or download pre-built binaries."
+---
+
+Vale is distributed as a single binary with no dependencies. Choose the installation method that works best for your operating system and workflow.
+
+## macOS
+
+<Tabs>
+  <Tab title="Homebrew">
+    The recommended method for macOS users:
+
+    ```bash
+    brew install vale
+    ```
+
+    To upgrade Vale:
+
+    ```bash
+    brew upgrade vale
+    ```
+
+    <Info>
+    Homebrew installs Vale from the official formula repository and keeps it up to date with `brew upgrade`.
+    </Info>
+  </Tab>
+
+  <Tab title="Binary Download">
+    Download the latest release for macOS:
+
+    <Steps>
+      <Step title="Download the archive">
+        Visit the [releases page](https://github.com/errata-ai/vale/releases) and download the appropriate archive:
+        - `vale_{version}_macOS_arm64.tar.gz` for Apple Silicon (M1/M2/M3)
+        - `vale_{version}_macOS_amd64.tar.gz` for Intel Macs
+      </Step>
+
+      <Step title="Extract and install">
+        ```bash
+        tar -xvf vale_{version}_macOS_arm64.tar.gz
+        sudo mv vale /usr/local/bin/
+        ```
+      </Step>
+
+      <Step title="Verify installation">
+        ```bash
+        vale --version
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Linux
+
+<Tabs>
+  <Tab title="Package Manager">
+    <Accordion title="Debian/Ubuntu (apt)">
+      Download and install the `.deb` package:
+
+      ```bash
+      wget https://github.com/errata-ai/vale/releases/download/v{version}/vale_{version}_Linux_amd64.deb
+      sudo dpkg -i vale_{version}_Linux_amd64.deb
+      ```
+    </Accordion>
+
+    <Accordion title="Fedora/RHEL/CentOS (dnf/yum)">
+      Download and install the `.rpm` package:
+
+      ```bash
+      wget https://github.com/errata-ai/vale/releases/download/v{version}/vale_{version}_Linux_amd64.rpm
+      sudo rpm -i vale_{version}_Linux_amd64.rpm
+      ```
+    </Accordion>
+
+    <Accordion title="Arch Linux (AUR)">
+      Install from the Arch User Repository:
+
+      ```bash
+      yay -S vale
+      # or
+      paru -S vale
+      ```
+    </Accordion>
+
+    <Accordion title="Snap">
+      Install from the Snap Store:
+
+      ```bash
+      sudo snap install vale
+      ```
+    </Accordion>
+  </Tab>
+
+  <Tab title="Binary Download">
+    <Steps>
+      <Step title="Download the archive">
+        Visit the [releases page](https://github.com/errata-ai/vale/releases) and download:
+        - `vale_{version}_Linux_amd64.tar.gz` for x86_64
+        - `vale_{version}_Linux_arm64.tar.gz` for ARM64
+      </Step>
+
+      <Step title="Extract and install">
+        ```bash
+        tar -xvf vale_{version}_Linux_amd64.tar.gz
+        sudo mv vale /usr/local/bin/
+        ```
+      </Step>
+
+      <Step title="Verify installation">
+        ```bash
+        vale --version
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Windows
+
+<Tabs>
+  <Tab title="Chocolatey">
+    The recommended method for Windows users:
+
+    ```powershell
+    choco install vale
+    ```
+
+    To upgrade Vale:
+
+    ```powershell
+    choco upgrade vale
+    ```
+
+    <Info>
+    Chocolatey automatically adds Vale to your PATH, making it available from any command prompt or PowerShell window.
+    </Info>
+  </Tab>
+
+  <Tab title="Scoop">
+    Install using Scoop:
+
+    ```powershell
+    scoop install vale
+    ```
+
+    To upgrade:
+
+    ```powershell
+    scoop update vale
+    ```
+  </Tab>
+
+  <Tab title="Binary Download">
+    <Steps>
+      <Step title="Download the archive">
+        Visit the [releases page](https://github.com/errata-ai/vale/releases) and download:
+        - `vale_{version}_Windows_amd64.zip` for 64-bit Windows
+      </Step>
+
+      <Step title="Extract the archive">
+        Extract the ZIP file to a location like `C:\Program Files\Vale\`.
+      </Step>
+
+      <Step title="Add to PATH">
+        Add the Vale directory to your PATH environment variable:
+        1. Open **System Properties** → **Advanced** → **Environment Variables**
+        2. Under **System Variables**, select **Path** and click **Edit**
+        3. Click **New** and add the path to Vale (e.g., `C:\Program Files\Vale\`)
+        4. Click **OK** to save
+      </Step>
+
+      <Step title="Verify installation">
+        Open a new command prompt and run:
+        ```powershell
+        vale --version
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Docker
+
+Vale is available as a Docker image, ideal for CI/CD pipelines:
+
+```bash
+docker pull jdkato/vale
+```
+
+<Accordion title="Usage examples">
+  **Lint files in the current directory:**
+
+  ```bash
+  docker run --rm -v $(pwd):/app jdkato/vale /app
+  ```
+
+  **Run with a custom config:**
+
+  ```bash
+  docker run --rm \
+    -v $(pwd):/app \
+    -v $(pwd)/.vale.ini:/root/.vale.ini \
+    jdkato/vale /app/docs
+  ```
+
+  **CI/CD pipeline example (GitHub Actions):**
+
+  ```yaml
+  - name: Run Vale
+    uses: docker://jdkato/vale:latest
+    with:
+      args: --config=/app/.vale.ini /app/docs
+  ```
+</Accordion>
+
+<Info>
+The Docker image supports both `linux/amd64` and `linux/arm64` platforms.
+</Info>
+
+## Build from Source
+
+If you prefer to build Vale yourself or need the latest development version:
+
+<Steps>
+  <Step title="Install Go">
+    Vale requires Go 1.21 or later. Download it from [golang.org](https://golang.org/dl/).
+  </Step>
+
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/errata-ai/vale.git
+    cd vale
+    ```
+  </Step>
+
+  <Step title="Build Vale">
+    ```bash
+    go build -ldflags "-s -w -X main.version=dev" -o bin/vale ./cmd/vale
+    ```
+
+    This creates a binary at `bin/vale`.
+  </Step>
+
+  <Step title="Install (optional)">
+    Move the binary to your PATH:
+
+    ```bash
+    # macOS/Linux
+    sudo mv bin/vale /usr/local/bin/
+
+    # Or add to PATH in your shell profile
+    export PATH="$PATH:/path/to/vale/bin"
+    ```
+  </Step>
+</Steps>
+
+<Note>
+The build process uses CGO for spell checking functionality, so you'll need a C compiler (GCC or Clang) installed on your system.
+</Note>
+
+## Verify Installation
+
+After installing Vale, verify it's working correctly:
+
+```bash
+vale --version
+```
+
+You should see output like:
+
+```bash
+vale version 3.0.0
+```
+
+<Tip>
+Run `vale --help` to see all available commands and options:
+
+```bash
+vale --help
+```
+
+This displays usage information, available flags, and commands like `sync`, `ls-config`, and `ls-dirs`.
+</Tip>
+
+## Environment Variables
+
+Vale supports two environment variables for configuration:
+
+| Variable | Description | Example |
+|----------|-------------|--------|
+| `VALE_CONFIG_PATH` | Override the default config file search | `export VALE_CONFIG_PATH=/path/to/.vale.ini` |
+| `VALE_STYLES_PATH` | Specify the default styles directory | `export VALE_STYLES_PATH=~/.config/vale/styles` |
+
+<Info>
+These variables are useful in CI/CD environments where you want to control Vale's configuration without modifying the filesystem structure.
+</Info>
+
+## Editor Integration
+
+Once Vale is installed, you can integrate it with your favorite editor:
+
+<CardGroup cols={2}>
+  <Card title="VS Code" icon="code">
+    Install the [Vale VSCode extension](https://marketplace.visualstudio.com/items?itemName=errata-ai.vale-server) for real-time linting as you write.
+  </Card>
+
+  <Card title="Vim/Neovim" icon="terminal">
+    Use [ALE](https://github.com/dense-analysis/ale) or [Neomake](https://github.com/neomake/neomake) for Vale integration.
+  </Card>
+
+  <Card title="Sublime Text" icon="window">
+    Install [SublimeLinter-vale](https://packagecontrol.io/packages/SublimeLinter-vale) via Package Control.
+  </Card>
+
+  <Card title="Emacs" icon="file-code">
+    Use [flycheck-vale](https://github.com/abougouffa/flycheck-vale) for real-time checking.
+  </Card>
+</CardGroup>
+
+<Note>
+Editor integrations require Vale to be installed and available in your PATH.
+</Note>
+
+## Next Steps
+
+Now that Vale is installed, you're ready to start linting:
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Set up your first Vale project in minutes.
+  </Card>
+
+  <Card title="Configuration" icon="gear" href="/concepts/configuration">
+    Learn about `.vale.ini` and how to configure Vale.
+  </Card>
+
+  <Card title="Styles" icon="palette" href="/concepts/styles">
+    Explore pre-built styles or create your own.
+  </Card>
+
+  <Card title="CI Integration" icon="git-branch" href="/guides/ci-integration">
+    Add Vale to your continuous integration pipeline.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<Accordion title="Vale command not found">
+  If you get a "command not found" error after installation:
+
+  1. **Check your PATH**: Ensure the Vale installation directory is in your PATH
+  2. **Restart your terminal**: Some installations require a new shell session
+  3. **Verify the binary location**: Run `which vale` (Unix) or `where vale` (Windows)
+
+  For binary installations, you may need to manually add Vale to your PATH. See the installation steps for your platform above.
+</Accordion>
+
+<Accordion title="Permission denied errors">
+  If you encounter permission errors when running Vale:
+
+  **On macOS/Linux:**
+  ```bash
+  sudo chmod +x /usr/local/bin/vale
+  ```
+
+  **On Windows:** Run your terminal as Administrator or adjust the file permissions in the security settings.
+</Accordion>
+
+<Accordion title="SSL certificate errors with vale sync">
+  If `vale sync` fails with SSL errors, your system may have outdated CA certificates:
+
+  **On Ubuntu/Debian:**
+  ```bash
+  sudo apt-get update
+  sudo apt-get install ca-certificates
+  ```
+
+  **On macOS:**
+  ```bash
+  brew install ca-certificates
+  ```
+</Accordion>

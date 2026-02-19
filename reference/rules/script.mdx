@@ -1,0 +1,447 @@
+---
+title: Script
+description: Write custom rule logic using Tengo scripts
+---
+
+The `script` rule type provides maximum flexibility by allowing you to write custom logic in Tengo, a fast embeddable scripting language. This enables complex rules beyond what Vale's built-in types can handle.
+
+## How It Works
+
+The `script` rule executes a Tengo script that has access to the scoped text. The script processes the text and returns an array of match objects, each specifying a location and optional message for an alert.
+
+## Parameters
+
+<ParamField path="script" type="string" required>
+  Either inline Tengo script code or a path to a `.tengo` file. If the value ends with `.tengo`, Vale loads the script from that file.
+</ParamField>
+
+## Script Requirements
+
+Your script must:
+
+1. Have access to the `scope` variable (the text to analyze)
+2. Create a `matches` array
+3. Each match must have `begin` and `end` integer properties
+4. Optionally include a `message` string property per match
+
+### Match Object Format
+
+```javascript
+{
+  begin: 10,      // Start position (0-indexed)
+  end: 25,        // End position (0-indexed)
+  message: "..."  // Optional: override rule's message
+}
+```
+
+## Examples
+
+### Section Length Check
+
+Ensure sections aren't too long:
+
+```yaml
+extends: script
+message: "Consider inserting a new section heading at this point."
+link: https://tengolang.com/
+scope: raw
+script: |
+  text := import("text")
+
+  matches := []
+  p_limit := 3  // at most 3 paragraphs per section
+
+  // Remove code blocks to avoid counting inter-block newlines
+  document := text.re_replace("(?s) *(\n```.*?```\n)", scope, "")
+
+  count := 0
+  for line in text.split(document, "\n") {
+    if text.has_prefix(line, "#") {
+      count = 0  // New section; reset count
+    } else if count > p_limit {
+      start := text.index(scope, line)
+      matches = append(matches, {begin: start, end: start + len(line)})
+      count = 0
+    } else if text.trim_space(line) == "" {
+      count += 1
+    }
+  }
+```
+
+### Custom Pattern Matching
+
+Complex pattern validation with custom logic:
+
+```yaml
+extends: script
+message: "Found problematic pattern"
+level: warning
+script: |
+  text := import("text")
+  matches := []
+  
+  lines := text.split(scope, "\n")
+  pos := 0
+  
+  for line in lines {
+    if text.contains(line, "TODO") && !text.contains(line, "ticket") {
+      start := pos + text.index(line, "TODO")
+      matches = append(matches, {
+        begin: start,
+        end: start + 4,
+        message: "TODO comments must reference a ticket"
+      })
+    }
+    pos += len(line) + 1  // +1 for newline
+  }
+```
+
+### Heading Hierarchy
+
+Validate heading levels don't skip:
+
+```yaml
+extends: script
+message: "Heading level skipped"
+level: error
+scope: raw
+script: |
+  text := import("text")
+  fmt := import("fmt")
+  
+  matches := []
+  prev_level := 0
+  pos := 0
+  
+  for line in text.split(scope, "\n") {
+    if text.has_prefix(line, "#") {
+      level := 0
+      for char in line {
+        if char == 35 {  // '#'
+          level += 1
+        } else {
+          break
+        }
+      }
+      
+      if level > prev_level + 1 {
+        matches = append(matches, {
+          begin: pos,
+          end: pos + level,
+          message: fmt.sprintf("Jumped from h%d to h%d", prev_level, level)
+        })
+      }
+      prev_level = level
+    }
+    pos += len(line) + 1
+  }
+```
+
+### External Script File
+
+Reference an external script file:
+
+```yaml
+extends: script
+message: "Custom validation failed"
+link: https://example.com/docs
+scope: text
+script: checks/custom-validation.tengo
+```
+
+**checks/custom-validation.tengo:**
+```javascript
+text := import("text")
+
+matches := []
+threshold := 100
+
+words := text.split(scope, " ")
+if len(words) > threshold {
+  matches = append(matches, {
+    begin: 0,
+    end: len(scope),
+    message: "Content exceeds word limit"
+  })
+}
+```
+
+### Sentence Ending Punctuation
+
+Check sentences end with proper punctuation:
+
+```yaml
+extends: script
+message: "Sentence doesn't end with proper punctuation"
+level: warning
+script: |
+  text := import("text")
+  
+  matches := []
+  sentences := text.split(scope, ". ")
+  pos := 0
+  
+  for sentence in sentences {
+    sentence = text.trim_space(sentence)
+    if len(sentence) > 0 {
+      last := sentence[len(sentence)-1]
+      if last != 46 && last != 33 && last != 63 {  // . ! ?
+        matches = append(matches, {
+          begin: pos + len(sentence) - 1,
+          end: pos + len(sentence)
+        })
+      }
+    }
+    pos += len(sentence) + 2  // +2 for ". "
+  }
+```
+
+### Code Block Balance
+
+Ensure code blocks are properly closed:
+
+```yaml
+extends: script
+message: "Unclosed code block"
+level: error
+scope: raw
+script: |
+  text := import("text")
+  
+  matches := []
+  in_block := false
+  pos := 0
+  block_start := 0
+  
+  for line in text.split(scope, "\n") {
+    if text.has_prefix(line, "```") {
+      if in_block {
+        in_block = false
+      } else {
+        in_block = true
+        block_start = pos
+      }
+    }
+    pos += len(line) + 1
+  }
+  
+  if in_block {
+    matches = append(matches, {
+      begin: block_start,
+      end: block_start + 3
+    })
+  }
+```
+
+## Use Cases
+
+<Info>
+The `script` rule is ideal for:
+- Complex validation logic beyond regex
+- Document structure validation
+- Custom business rule enforcement
+- Integration with external data
+- Multi-step pattern analysis
+- Context-aware checking
+</Info>
+
+## Available Modules
+
+Your script has access to these Tengo standard library modules:
+
+- `text`: String manipulation and regex
+- `fmt`: String formatting
+- `math`: Mathematical functions
+
+<Warning>
+The `os` module is deliberately NOT available for security reasons. Scripts cannot access the filesystem or execute system commands.
+</Warning>
+
+### Text Module Functions
+
+Common `text` module functions:
+
+```javascript
+text := import("text")
+
+text.contains(s, substr)           // Check substring
+text.has_prefix(s, prefix)         // Check prefix
+text.has_suffix(s, suffix)         // Check suffix
+text.split(s, sep)                 // Split string
+text.join(arr, sep)                // Join array
+text.trim_space(s)                 // Trim whitespace
+text.index(s, substr)              // Find index
+text.re_match(pattern, s)          // Regex match
+text.re_replace(pattern, s, repl)  // Regex replace
+```
+
+### Fmt Module Functions
+
+```javascript
+fmt := import("fmt")
+
+fmt.sprintf(format, args...)  // Format string
+fmt.printf(format, args...)   // Print (for debugging)
+```
+
+### Math Module Functions
+
+```javascript
+math := import("math")
+
+math.abs(x)
+math.sqrt(x)
+math.floor(x)
+math.ceil(x)
+math.round(x)
+math.max(x, y)
+math.min(x, y)
+```
+
+## Position Calculation
+
+<Note>
+Position values (`begin` and `end`) are 0-indexed byte offsets into the `scope` text. Calculate positions carefully:
+
+```javascript
+pos := 0
+for line in text.split(scope, "\n") {
+  // Process line
+  start := pos + text.index(line, "pattern")
+  matches = append(matches, {begin: start, end: start + len("pattern")})
+  pos += len(line) + 1  // +1 for newline character
+}
+```
+</Note>
+
+## Per-Match Messages
+
+Override the rule's default message for specific matches:
+
+```yaml
+extends: script
+message: "Default message"
+script: |
+  matches = append(matches, {
+    begin: 10,
+    end: 20,
+    message: "Custom message for this specific match"
+  })
+```
+
+## Technical Details
+
+Internally, the `script` rule (internal/check/script.go:49-98):
+
+1. Compiles the Tengo script
+2. Adds the `scope` variable containing the text
+3. Runs the script
+4. Retrieves the `matches` array
+5. For each match, creates an alert with the specified span
+
+The execution:
+```go
+script := tengo.NewScript([]byte(s.Script))
+script.SetImports(stdlib.GetModuleMap("text", "fmt", "math"))
+
+err := script.Add("scope", blk.Text)
+compiled, err := script.Compile()
+err = compiled.Run()
+
+for _, match := range parseMatches(compiled.Get("matches").Array()) {
+    // Create alerts
+}
+```
+
+## Debugging Scripts
+
+To debug your Tengo scripts:
+
+1. Use `fmt.printf()` to print debug information
+2. Start with simple logic and build up
+3. Test with small sample texts
+4. Check Vale's error output for script errors
+5. Use inline scripts during development, move to files when stable
+
+<Tip>
+During development, use inline scripts for faster iteration:
+
+```yaml
+script: |
+  fmt := import("fmt")
+  fmt.printf("scope length: %d\n", len(scope))
+  matches := []
+```
+
+Move to external files once working.
+</Tip>
+
+## Performance Considerations
+
+<Warning>
+Script rules are slower than built-in rules because they:
+
+1. Execute custom logic for each scope match
+2. Don't benefit from optimized C code (regex)
+3. Must parse and interpret scripts
+
+Use scripts only when built-in rules can't handle your requirements.
+</Warning>
+
+## Error Handling
+
+Scripts that error will cause rule loading to fail. Ensure:
+
+- All variables are defined
+- Array indices are valid
+- String operations handle empty strings
+- Division by zero is avoided
+
+Vale reports script errors with stack traces pointing to the problematic line.
+
+## Scope Recommendations
+
+The `script` rule can use any scope, but consider:
+
+- `scope: raw` - Access to markup (headings, code blocks)
+- `scope: text` - Clean text without markup
+- `scope: paragraph` - Process paragraphs independently
+- `scope: sentence` - Process sentences (more executions)
+
+## External Script Loading
+
+When using external scripts, Vale searches:
+
+1. Relative to the style directory
+2. In `config/scripts/` subdirectory
+3. Absolute paths
+
+```yaml
+# Relative to style
+script: my-check.tengo
+
+# In config/scripts/
+script: scripts/my-check.tengo
+
+# Absolute path
+script: /path/to/my-check.tengo
+```
+
+## Related Rule Types
+
+- **metric**: Use for mathematical formulas on document statistics
+- **sequence**: Use for grammatical pattern matching
+- **existence**: Use for simple pattern matching
+- **substitution**: Use for find-and-replace patterns
+
+Use `script` as a last resort when other rule types can't express your logic.
+
+## Learning Tengo
+
+<Tip>
+Learn more about Tengo scripting:
+
+- [Tengo Language Documentation](https://github.com/d5/tengo/tree/master/docs)
+- [Tengo Standard Library](https://github.com/d5/tengo/blob/master/docs/stdlib.md)
+- Vale's script examples in `testdata/styles/Scripts/`
+</Tip>

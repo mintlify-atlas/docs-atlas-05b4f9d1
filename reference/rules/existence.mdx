@@ -1,0 +1,138 @@
+---
+title: Existence
+description: Check for the presence of specific tokens in text
+---
+
+The `existence` rule type checks for the presence of specific tokens or patterns in your text. This is one of the simplest and most commonly used rule types in Vale.
+
+## How It Works
+
+The `existence` rule looks for any matches of specified tokens or regular expression patterns in the provided text. When a match is found, it triggers an alert.
+
+## Parameters
+
+<ParamField path="tokens" type="array" required>
+  An array of strings or regular expressions to match against. Each token is treated as a separate pattern to look for.
+</ParamField>
+
+<ParamField path="ignorecase" type="boolean" default="true">
+  Makes all matches case-insensitive when set to `true`.
+</ParamField>
+
+<ParamField path="nonword" type="boolean" default="false">
+  Removes the default word boundaries (`\b`) when set to `true`. This allows you to match tokens that are part of larger words.
+</ParamField>
+
+<ParamField path="exceptions" type="array">
+  An array of strings or regex patterns to be ignored. Matches that are in the exceptions list will not trigger alerts.
+</ParamField>
+
+<ParamField path="vocab" type="boolean" default="true">
+  If `true`, Vale will use your vocabulary files (accept.txt) as additional exceptions.
+</ParamField>
+
+<ParamField path="raw" type="array">
+  An array of raw regex strings that will be concatenated directly into the pattern without modification.
+</ParamField>
+
+## Examples
+
+### Basic Word List
+
+Check for overly technical acronyms that should be expanded:
+
+```yaml
+extends: existence
+message: "Avoid using '%s'"
+description: "Tech people know their acronyms; you come across as not very tech-savvy if you expand them."
+ignorecase: true
+level: warning
+tokens:
+  - 'cascading[ -]?style[ -]?sheets'
+  - 'hyper[ -]?text([ -]?mark[ -]?up([ -]?language)?)?'
+```
+
+### E-Prime Style
+
+Check for forms of "to be" to encourage more active writing:
+
+```yaml
+extends: existence
+message: 'Avoid using "%s"'
+ignorecase: true
+level: suggestion
+tokens:
+  - am
+  - are
+  - aren't
+  - be
+  - been
+  - being
+  - is
+  - isn't
+  - was
+  - wasn't
+  - were
+  - weren't
+```
+
+### Using Exceptions
+
+Check for problematic terms while allowing specific exceptions:
+
+```yaml
+extends: existence
+message: "Consider using '%s' instead of '%s'."
+level: warning
+ignorecase: false
+tokens:
+  - blacklist
+  - whitelist
+  - master
+  - slave
+exceptions:
+  - Master's degree
+  - masterpiece
+```
+
+### Pattern Matching with Nonword
+
+Match patterns that aren't complete words:
+
+```yaml
+extends: existence
+message: "Don't use trailing punctuation in headings."
+level: error
+scope: heading
+nonword: true
+tokens:
+  - '[a-z][.?!:,;]$'
+```
+
+## Use Cases
+
+<Info>
+The `existence` rule is ideal for:
+- Maintaining word blocklists
+- Enforcing style guidelines about specific terms
+- Preventing deprecated terminology
+- Checking for brand name misuse
+- Enforcing inclusive language
+</Info>
+
+## Technical Details
+
+Internally, the `existence` rule (internal/check/existence.go:73-97):
+
+1. Compiles all tokens into a single regular expression pattern
+2. Searches the text for all matches using `FindAllStringIndex`
+3. For each match, checks if it's in the exceptions list
+4. Creates an alert for any match that's not an exception
+
+The pattern compilation respects the `ignorecase` and `nonword` settings, automatically adding word boundaries unless `nonword` is `true`.
+
+## Related Rule Types
+
+- **substitution**: Use when you want to suggest replacements for matched tokens
+- **occurrence**: Use when you want to count how many times a token appears
+- **repetition**: Use when you want to detect repeated words

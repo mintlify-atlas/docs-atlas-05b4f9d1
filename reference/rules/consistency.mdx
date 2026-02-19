@@ -1,0 +1,175 @@
+---
+title: Consistency
+description: Enforce consistent usage of variant spellings or terms
+---
+
+The `consistency` rule type ensures that variant spellings or terms aren't mixed within the same document. When multiple valid options exist, this rule enforces picking one and sticking with it.
+
+## How It Works
+
+The `consistency` rule tracks pairs of alternatives defined in the `either` map. If both variants appear in the same file, it triggers an alert. This is file-scoped, meaning consistency is enforced across the entire document.
+
+## Parameters
+
+<ParamField path="either" type="map" required>
+  A map of `option1: option2` pairs. Only one option from each pair should appear in a document.
+</ParamField>
+
+<ParamField path="ignorecase" type="boolean" default="false">
+  Makes pattern matching case-insensitive when set to `true`.
+</ParamField>
+
+<ParamField path="nonword" type="boolean" default="false">
+  Removes the default word boundaries (`\b`) when set to `true`.
+</ParamField>
+
+## Examples
+
+### Spelling Consistency
+
+Enforce consistent spelling across British and American English:
+
+```yaml
+extends: consistency
+message: "Inconsistent spelling of '%s'."
+level: error
+ignorecase: true
+either:
+  advisor: adviser
+  centre: center
+  colour: color
+  emphasise: emphasize
+  finalise: finalize
+  focussed: focused
+  labour: labor
+  organise: organize
+```
+
+### Smart Quotes vs Straight Quotes
+
+Ensure consistent use of quote styles:
+
+```yaml
+extends: consistency
+message: "Inconsistent use of '%s' ('smart' mixed with 'dumb')"
+level: error
+scope: text
+nonword: true
+either:
+  '"': '[""]'
+  "'": '[''']'
+```
+
+### Hyphenation Consistency
+
+Enforce consistent hyphenation of compound terms:
+
+```yaml
+extends: consistency
+message: "Inconsistent hyphenation of '%s'."
+level: warning
+ignorecase: true
+either:
+  built-in: builtin
+  e-mail: email
+  open-source: opensource
+```
+
+### Brand Name Variants
+
+Ensure consistent brand name usage:
+
+```yaml
+extends: consistency
+message: "Use '%s' consistently throughout the document."
+level: error
+ignorecase: false
+either:
+  GitHub: Github
+  JavaScript: Javascript
+  PostgreSQL: Postgres
+```
+
+### Date Format Consistency
+
+Enforce consistent date formatting:
+
+```yaml
+extends: consistency
+message: "Use consistent date format: '%s'."
+level: warning
+nonword: true
+either:
+  '\d{1,2}/\d{1,2}/\d{4}': '\d{4}-\d{2}-\d{2}'
+```
+
+## Use Cases
+
+<Info>
+The `consistency` rule is ideal for:
+- Enforcing spelling consistency (US vs UK English)
+- Maintaining consistent hyphenation
+- Ensuring uniform quote style
+- Preventing mixed terminology
+- Standardizing date/time formats
+</Info>
+
+## File-Level Scope
+
+<Warning>
+The `consistency` rule operates at the file level. It tracks all occurrences across the entire document and only triggers when both variants appear in the same file.
+
+Unlike other rules, it doesn't matter which variant you choose—just that you use only one consistently throughout the document.
+</Warning>
+
+## Technical Details
+
+Internally, the `consistency` rule (internal/check/consistency.go:80-112):
+
+1. Creates a separate check step for each key-value pair in `either`
+2. Compiles each pair into a regex with named capture groups
+3. Stores all matches in the file's `Sequences` array
+4. If both names from a pair appear in `Sequences`, triggers an alert
+5. Uses `core.AllStringsInSlice()` to check for complete pairs
+
+The rule creates named capture groups for tracking:
+```go
+chkRE = fmt.Sprintf("(?P<%s>%s)|(?P<%s>%s)", subs[0], v1, subs[1], v2)
+```
+
+This allows Vale to track which variant was used throughout the document.
+
+## Multiple Pairs
+
+You can define multiple pairs in a single rule. Vale will check each pair independently:
+
+```yaml
+extends: consistency
+message: "Inconsistent spelling of '%s'."
+level: error
+either:
+  color: colour
+  center: centre
+  organize: organise
+```
+
+Each pair is evaluated separately, so you could use "color" and "centre" in the same document without triggering alerts (though that would be unusual).
+
+## Case Sensitivity
+
+By default, `consistency` rules are case-sensitive. Set `ignorecase: true` to treat "Color" and "color" as the same variant:
+
+```yaml
+extends: consistency
+message: "Inconsistent spelling of '%s'."
+level: error
+ignorecase: true
+either:
+  Color: Colour
+```
+
+## Related Rule Types
+
+- **substitution**: Use when you want to enforce one specific variant (rather than just consistency)
+- **existence**: Use when you want to flag specific terms regardless of alternatives
+- **spelling**: Use for general spell-checking with dictionaries

@@ -1,0 +1,482 @@
+---
+title: "Filters"
+description: "Filter and customize Vale rules dynamically using expressions"
+---
+
+## Overview
+
+Vale's filter system allows you to dynamically select and modify which rules run using powerful expression syntax. Instead of editing `.vale.ini` for every rule change, you can:
+
+- Filter rules by style, severity, or scope
+- Override rule levels on the fly
+- Apply different rules for different scenarios
+- Create reusable filter profiles
+
+Filters use the `--filter` flag and are evaluated at runtime.
+
+## Basic Usage
+
+Filter rules directly from the command line:
+
+```bash
+vale --filter ".Level == 'error'" docs/
+```
+
+This runs only rules with severity level `error`.
+
+### Filter Options
+
+The `--filter` flag accepts three input types:
+
+<Tabs>
+  <Tab title="Inline Expression">
+    Pass the filter expression directly:
+
+    ```bash
+    vale --filter ".Level == 'error'" file.md
+    ```
+
+    Good for quick, one-off filtering.
+  </Tab>
+
+  <Tab title="File Path">
+    Reference a file containing the filter expression:
+
+    ```bash
+    vale --filter /path/to/filter.txt file.md
+    ```
+
+    The file should contain just the expression:
+    ```
+    .Level == 'error'
+    ```
+  </Tab>
+
+  <Tab title="StylesPath Reference">
+    Store filters in your Vale configuration:
+
+    ```bash
+    vale --filter my-filter file.md
+    ```
+
+    Vale looks for `StylesPath/config/filters/my-filter`.
+
+    <Tip>
+    This is the recommended approach for team-shared filters.
+    </Tip>
+  </Tab>
+</Tabs>
+
+## Filter Syntax
+
+Filters use the [expr](https://github.com/expr-lang/expr) expression language with access to rule properties.
+
+### Available Fields
+
+Each rule exposes these fields (see `internal/check/definition.go:32-44`):
+
+```go
+type Definition struct {
+    Action      core.Action
+    Description string
+    Extends     string
+    Level       string    // "suggestion", "warning", "error"
+    Limit       int
+    Link        string
+    Message     string
+    Name        string    // e.g., "Vale.Spelling"
+    Scope       []string  // e.g., ["text", "heading"]
+    Selector    Selector
+}
+```
+
+<Info>
+Filters operate on the `Definition` structure, which represents rule metadata.
+</Info>
+
+### Basic Expressions
+
+<Tabs>
+  <Tab title="Filter by Level">
+    Show only errors:
+    ```bash
+    vale --filter ".Level == 'error'" file.md
+    ```
+
+    Show warnings and errors:
+    ```bash
+    vale --filter ".Level in ['warning', 'error']" file.md
+    ```
+
+    Exclude suggestions:
+    ```bash
+    vale --filter ".Level != 'suggestion'" file.md
+    ```
+  </Tab>
+
+  <Tab title="Filter by Style">
+    Run only Microsoft style rules:
+    ```bash
+    vale --filter "startsWith(.Name, 'Microsoft.')" file.md
+    ```
+
+    Exclude a specific style:
+    ```bash
+    vale --filter "!startsWith(.Name, 'write-good.')" file.md
+    ```
+
+    Multiple styles:
+    ```bash
+    vale --filter "startsWith(.Name, 'Google.') || startsWith(.Name, 'Microsoft.')" file.md
+    ```
+  </Tab>
+
+  <Tab title="Filter by Scope">
+    Rules that check headings:
+    ```bash
+    vale --filter "'heading' in .Scope" file.md
+    ```
+
+    Rules that don't check code:
+    ```bash
+    vale --filter "!('code' in .Scope)" file.md
+    ```
+  </Tab>
+</Tabs>
+
+## How Filters Work
+
+Vale's filter implementation (see `internal/check/filter.go:14-112`):
+
+<Accordion title="Step 1: Load Filter Expression">
+  Vale reads the filter from one of three sources:
+
+  ```go
+  func filter(mgr *Manager) (map[string]Rule, error) {
+      var filter string
+      stringOrPath := mgr.Config.Flags.Filter
+      
+      if system.FileExists(stringOrPath) {
+          // Case 1: Valid file path
+          b, err := os.ReadFile(stringOrPath)
+          filter = string(b)
+      } else if found := core.FindAsset(mgr.Config, stringOrPath); found != "" {
+          // Case 2: StylesPath reference
+          b, err := os.ReadFile(found)
+          filter = string(b)
+      } else {
+          // Case 3: Inline expression
+          filter = stringOrPath
+      }
+      return mgr.rules, nil
+  }
+  ```
+</Accordion>
+
+<Accordion title="Step 2: Build Environment">
+  All loaded rules are exposed to the filter:
+
+  ```go
+  env := FilterEnv{}
+  for _, rule := range mgr.rules {
+      env.Rules = append(env.Rules, rule.Fields())
+  }
+  ```
+
+  The environment contains a `Rules` array with all rule definitions.
+</Accordion>
+
+<Accordion title="Step 3: Compile and Execute">
+  The filter expression is compiled and executed:
+
+  ```go
+  code := fmt.Sprintf(`filter(Rules, {%s})`, filter)
+  
+  program, err := expr.Compile(code, expr.Env(env))
+  if err != nil {
+      return mgr.rules, err
+  }
+  
+  output, err := expr.Run(program, env)
+  ```
+
+  The `filter()` function selects matching rules.
+</Accordion>
+
+<Accordion title="Step 4: Update Configuration">
+  Vale adjusts the minimum alert level if needed:
+
+  ```go
+  if strings.Contains(code, ".Level") {
+      lvl := core.LevelToInt[rule.Level]
+      if lvl < mgr.Config.MinAlertLevel {
+          mgr.Config.MinAlertLevel = lvl
+      }
+  }
+  ```
+
+  This ensures filtered rules can actually run.
+</Accordion>
+
+### Filter Pipeline
+
+The order of evaluation is always:
+
+```
+.vale.ini → --filter → final rules
+```
+
+The filter always has the final say. This means:
+
+<Warning>
+Filtered results can only be a **subset** of what `.vale.ini` would normally load. Filters can't enable rules that weren't loaded from your configuration.
+</Warning>
+
+## Advanced Expressions
+
+<Tabs>
+  <Tab title="Complex Conditions">
+    Combine multiple criteria:
+
+    ```bash
+    vale --filter ".Level == 'error' && startsWith(.Name, 'Vale.')" file.md
+    ```
+
+    Use parentheses for clarity:
+    ```bash
+    vale --filter "(.Level == 'error' || .Level == 'warning') && 'heading' in .Scope" file.md
+    ```
+  </Tab>
+
+  <Tab title="Pattern Matching">
+    Match rule names with patterns:
+
+    ```bash
+    vale --filter "matches(.Name, '^(Google|Microsoft)\\.')" file.md
+    ```
+
+    Exclude specific rules:
+    ```bash
+    vale --filter "!matches(.Name, 'Spelling|Terms')" file.md
+    ```
+  </Tab>
+
+  <Tab title="Dynamic Level Override">
+    Change rule severity:
+
+    ```bash
+    vale --filter ".Level = 'suggestion'; true" file.md
+    ```
+
+    Make all warnings errors:
+    ```bash
+    vale --filter ".Level == 'warning' ? (.Level = 'error'; true) : true" file.md
+    ```
+
+    <Note>
+    The expression must return `true` for the rule to be included after modifying `.Level`.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Reusable Filter Files
+
+Store common filters for your team:
+
+```bash
+# StylesPath structure
+StylesPath/
+├── config/
+│   └── filters/
+│       ├── strict
+│       ├── quick-check
+│       └── docs-only
+└── ...
+```
+
+### Example Filters
+
+<Tabs>
+  <Tab title="strict">
+    ```
+    .Level in ['warning', 'error']
+    ```
+
+    Usage:
+    ```bash
+    vale --filter strict docs/
+    ```
+  </Tab>
+
+  <Tab title="quick-check">
+    ```
+    .Level == 'error' && !startsWith(.Name, 'Vale.Spelling')
+    ```
+
+    Fast linting without spell-checking.
+  </Tab>
+
+  <Tab title="docs-only">
+    ```
+    'text' in .Scope || 'heading' in .Scope
+    ```
+
+    Skip code-specific rules for prose-heavy documents.
+  </Tab>
+</Tabs>
+
+## CI/CD Integration
+
+Use filters to implement progressive checks:
+
+```yaml
+# .github/workflows/vale.yml
+name: Vale
+on: [pull_request]
+
+jobs:
+  # Quick check for blockers
+  errors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: vale --filter ".Level == 'error'" docs/
+  
+  # Full check, but only warn
+  warnings:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v3
+      - run: vale docs/
+```
+
+<Tip>
+Use strict filters for PR checks and relaxed filters during development.
+</Tip>
+
+## Debugging Filters
+
+### View Configuration
+
+See which rules would run:
+
+```bash
+vale --filter ".Level == 'error'" ls-config
+```
+
+Check the `Checks` section in the output.
+
+### Test Expressions
+
+Create a test filter file and iterate:
+
+```bash
+echo ".Level == 'error'" > test-filter.txt
+vale --filter test-filter.txt file.md
+```
+
+Modify `test-filter.txt` until you get the desired results.
+
+## Common Filter Patterns
+
+<AccordionGroup>
+  <Accordion title="Only Check Specific Styles">
+    ```bash
+    vale --filter "startsWith(.Name, 'MyCompany.')" docs/
+    ```
+  </Accordion>
+
+  <Accordion title="Exclude Long-Running Rules">
+    ```bash
+    vale --filter "!startsWith(.Name, 'Vale.Spelling')" docs/
+    ```
+
+    Useful for quick iteration.
+  </Accordion>
+
+  <Accordion title="Progressive Enforcement">
+    Start with errors only:
+    ```bash
+    vale --filter ".Level == 'error'" docs/
+    ```
+
+    Then add warnings:
+    ```bash
+    vale --filter ".Level in ['error', 'warning']" docs/
+    ```
+
+    Finally, everything:
+    ```bash
+    vale docs/
+    ```
+  </Accordion>
+
+  <Accordion title="Context-Specific Rules">
+    Different filters for different doc types:
+    ```bash
+    # API docs: strict technical rules
+    vale --filter api-docs api/
+    
+    # Guides: focus on readability
+    vale --filter readability-focus guides/
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Limitations
+
+<Warning>
+Filters cannot:
+- Enable rules not loaded by `.vale.ini`
+- Modify rule patterns or logic
+- Access file content or paths
+- Create new rules dynamically
+</Warning>
+
+Filters operate only on rule metadata, not the rules themselves.
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Start Simple" icon="seedling">
+    Begin with basic level filters before complex expressions.
+  </Card>
+
+  <Card title="Store Team Filters" icon="users">
+    Keep common filters in `config/filters/` for everyone to use.
+  </Card>
+
+  <Card title="Document Filters" icon="book">
+    Add comments explaining what each filter does:
+    ```
+    # Strict mode: only errors from core styles
+    .Level == 'error' && startsWith(.Name, 'Vale.')
+    ```
+  </Card>
+
+  <Card title="Test Changes" icon="vial">
+    Always test filter expressions on sample files before using in CI.
+  </Card>
+</CardGroup>
+
+## Expression Reference
+
+Common expr language features:
+
+| Operator | Description | Example |
+|----------|-------------|----------|
+| `==`, `!=` | Equality | `.Level == 'error'` |
+| `in` | Membership | `'text' in .Scope` |
+| `&&`, `||` | Logic | `.Level == 'error' || .Level == 'warning'` |
+| `!` | Negation | `!startsWith(.Name, 'Vale.')` |
+| `startsWith()` | Prefix match | `startsWith(.Name, 'Google.')` |
+| `matches()` | Regex match | `matches(.Name, '^Vale\\.')` |
+
+See the [expr documentation](https://expr.medv.io/) for complete syntax reference.
+
+## Related Topics
+
+- [Rule Types](/reference/rules/existence) - Understanding rule definitions
+- [Configuration](/concepts/configuration) - Setting up `.vale.ini`
+- [`--filter` Flag](/reference/cli/lint#filter) - Command-line reference

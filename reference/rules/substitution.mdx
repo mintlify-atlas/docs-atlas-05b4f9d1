@@ -1,0 +1,155 @@
+---
+title: Substitution
+description: Suggest replacements for matched patterns
+---
+
+The `substitution` rule type looks for specific patterns and suggests replacements. This is one of the most powerful rule types for enforcing terminology and style preferences.
+
+## How It Works
+
+The `substitution` rule searches for patterns defined in the `swap` map and suggests the corresponding replacement values. It automatically handles case preservation and can provide multiple replacement suggestions.
+
+## Parameters
+
+<ParamField path="swap" type="map" required>
+  A map where keys are patterns to match (can be regex) and values are suggested replacements. Values can use regex capture groups with `$1`, `$2`, etc.
+</ParamField>
+
+<ParamField path="ignorecase" type="boolean" default="false">
+  Makes all matches case-insensitive when set to `true`.
+</ParamField>
+
+<ParamField path="nonword" type="boolean" default="false">
+  Removes the default word boundaries (`\b`) when set to `true`.
+</ParamField>
+
+<ParamField path="exceptions" type="array">
+  An array of strings or patterns to be ignored.
+</ParamField>
+
+<ParamField path="vocab" type="boolean" default="true">
+  If `true`, Vale will use your vocabulary files as additional exceptions.
+</ParamField>
+
+<ParamField path="capitalize" type="boolean" default="false">
+  If `true`, Vale will capitalize the suggestion if the matched text is capitalized.
+</ParamField>
+
+## Examples
+
+### Simple Replacement
+
+Replace one term with another:
+
+```yaml
+extends: substitution
+message: "Use '%s' instead of '%s'."
+ignorecase: false
+level: warning
+action:
+  name: replace
+swap:
+  smartphone: mobile phone
+  cell phone: mobile phone
+```
+
+### Empty Replacement
+
+Remove words entirely:
+
+```yaml
+extends: substitution
+message: "Remove '%s'."
+ignorecase: false
+level: warning
+action:
+  name: replace
+swap:
+  (?:obvious|obviously|Obviously): ""
+```
+
+### Multiple Suggestions
+
+Provide alternative replacements using the pipe operator:
+
+```yaml
+extends: substitution
+message: "Consider using '%s' instead of '%s'."
+level: warning
+action:
+  name: replace
+swap:
+  guys: people|folks|everyone
+  mankind: humanity|humankind|people
+```
+
+### Regex with Capture Groups
+
+Use capture groups to preserve parts of the match:
+
+```yaml
+extends: substitution
+message: "Use '%s' instead of '%s'."
+level: error
+swap:
+  '(\w+)ing\s+(\w+)ing': '$1 and $2'
+```
+
+<Warning>
+When using capture groups in your pattern, Vale will automatically convert them to non-capturing groups. If you need to reference captured text in your replacement, use the syntax shown above.
+</Warning>
+
+### Case-Insensitive with Capitalization
+
+Match case-insensitively but preserve capitalization in suggestions:
+
+```yaml
+extends: substitution
+message: "Use '%s' instead of '%s'."
+ignorecase: true
+capitalize: true
+level: warning
+action:
+  name: replace
+swap:
+  internet: Internet
+  open source: open-source
+```
+
+## Use Cases
+
+<Info>
+The `substitution` rule is ideal for:
+- Enforcing brand name capitalization
+- Replacing deprecated terms with preferred alternatives
+- Standardizing technical terminology
+- Suggesting more concise alternatives
+- Enforcing inclusive language replacements
+</Info>
+
+## Technical Details
+
+Internally, the `substitution` rule (internal/check/substitution.go:93-157):
+
+1. Sorts patterns by length (longest first) to avoid partial matches
+2. Converts capture groups to non-capturing groups automatically
+3. Compiles all patterns into a single alternation regex
+4. For each match, looks up the corresponding replacement
+5. Handles case preservation if `capitalize` is enabled
+6. Splits pipe-separated replacements into multiple suggestions
+
+The rule uses `FindAllStringSubmatchIndex` to capture both the match and any subgroups, allowing for complex pattern-to-replacement mappings.
+
+## Message Formatting
+
+When using the `action.name: replace` with multiple suggestions (pipe-separated), Vale automatically:
+
+- Converts the message format to avoid double-quoting
+- Creates an array of replacement options
+- Formats the message as "Use X, Y, or Z instead of '%s'"
+
+## Related Rule Types
+
+- **existence**: Use when you only want to flag terms without suggesting replacements
+- **consistency**: Use when you want to enforce consistency between variant spellings
+- **capitalization**: Use when you want to enforce specific case styles

@@ -1,0 +1,399 @@
+---
+title: "Styles"
+description: "How Vale organizes and extends rules through style-based architecture"
+---
+
+Vale uses a style-based architecture to organize rules (also called "checks"). A style is a collection of individual rules stored as YAML files, allowing you to maintain reusable rule sets for different writing standards.
+
+## What is a style?
+
+A style is a directory containing one or more rule files. Each rule file defines a single check that Vale applies to your content. For example:
+
+```
+MyStyle/
+├── Headings.yml
+├── Terms.yml
+└── Spelling.yml
+```
+
+You can create custom styles or use pre-built ones from the [Vale package hub](https://vale.sh/hub). Popular styles include Microsoft, Google, write-good, and proselint.
+
+## Extension points
+
+Vale provides 12 extension points that define how rules match and evaluate text. Each rule file must declare which extension point it uses via the `extends` key.
+
+<Tabs>
+  <Tab title="existence">
+    Checks for the presence of specific words or patterns.
+
+    ```yaml
+    extends: existence
+    message: "Avoid using '%s'"
+    level: error
+    tokens:
+      - obviously
+      - simply
+      - just
+    ```
+
+    Use `existence` when you want to flag specific terms, phrases, or patterns. The rule triggers whenever any token is found in the text.
+
+    **Key attributes:**
+    - `tokens`: List of terms to search for
+    - `ignorecase`: Whether to ignore case (default: true)
+    - `nonword`: Match anywhere, not just word boundaries
+    - `exceptions`: Terms to ignore even if they match
+  </Tab>
+
+  <Tab title="substitution">
+    Suggests replacements for matched text.
+
+    ```yaml
+    extends: substitution
+    message: "Use '%s' instead of '%s'"
+    level: warning
+    swap:
+      utilize: use
+      leverage: use
+      prior to: before
+    ```
+
+    The `substitution` extension swaps keys for values, finding the key pattern and suggesting the value as a replacement.
+
+    **Key attributes:**
+    - `swap`: Map of patterns to replacements
+    - `ignorecase`: Whether to ignore case
+    - `capitalize`: Preserve original capitalization
+    - `nonword`: Match anywhere in text
+  </Tab>
+
+  <Tab title="occurrence">
+    Counts occurrences of a token against min/max thresholds.
+
+    ```yaml
+    extends: occurrence
+    message: "More than 3 commas in a sentence"
+    level: suggestion
+    scope: sentence
+    token: ','
+    max: 3
+    ```
+
+    Use `occurrence` to enforce limits on repetitive elements like commas, exclamation points, or word counts.
+
+    **Key attributes:**
+    - `token`: Regular expression to match
+    - `max`: Maximum allowed occurrences
+    - `min`: Minimum required occurrences
+    - `scope`: Where to apply the count
+  </Tab>
+
+  <Tab title="repetition">
+    Detects repeated words or phrases.
+
+    ```yaml
+    extends: repetition
+    message: "'%s' is repeated"
+    level: error
+    ignorecase: true
+    alpha: true
+    tokens:
+      - '[^\s]+'
+    ```
+
+    The `repetition` extension finds consecutive duplicate tokens, useful for catching unintentional word repetition.
+
+    **Key attributes:**
+    - `tokens`: Patterns defining what counts as a token
+    - `alpha`: Only check alphabetic tokens
+    - `ignorecase`: Whether to ignore case
+  </Tab>
+
+  <Tab title="consistency">
+    Enforces consistent usage between variants.
+
+    ```yaml
+    extends: consistency
+    message: "Inconsistent spelling of '%s'"
+    level: error
+    either:
+      center: centre
+      color: colour
+      analyze: analyse
+    ```
+
+    Use `consistency` when either variant is acceptable, but you want consistent usage throughout a document.
+
+    **Key attributes:**
+    - `either`: Map of variant pairs
+    - `ignorecase`: Whether to ignore case
+  </Tab>
+
+  <Tab title="conditional">
+    Ensures one pattern implies another.
+
+    ```yaml
+    extends: conditional
+    message: "'%s' has no definition"
+    level: error
+    first: '\b([A-Z]{3,5})\b'
+    second: '([A-Z]{3,5}): (?:\b[A-Z][a-z]+ )+'
+    exceptions:
+      - API
+      - HTTP
+    ```
+
+    The `conditional` extension ensures that using an abbreviation (first) requires a definition (second) somewhere in the file.
+
+    **Key attributes:**
+    - `first`: The trigger pattern (antecedent)
+    - `second`: The required pattern (consequent)
+    - `exceptions`: Patterns to exclude
+  </Tab>
+
+  <Tab title="capitalization">
+    Checks capitalization style.
+
+    ```yaml
+    extends: capitalization
+    message: "'%s' should be in title case"
+    level: warning
+    match: $title
+    style: AP
+    exceptions:
+      - API
+      - GitHub
+    ```
+
+    The `capitalization` extension supports multiple styles:
+    - `$title`: Title case (AP or Chicago style)
+    - `$sentence`: Sentence case
+    - `$lower`: All lowercase
+    - `$upper`: All uppercase
+
+    **Key attributes:**
+    - `match`: Capitalization pattern to check
+    - `style`: "AP" or "Chicago" (for title case)
+    - `exceptions`: Terms to ignore
+    - `threshold`: Proportion of words that must match (0-1)
+  </Tab>
+
+  <Tab title="readability">
+    Calculates readability scores.
+
+    ```yaml
+    extends: readability
+    message: "Grade level (%s) too high"
+    level: warning
+    grade: 8
+    metrics:
+      - Flesch-Kincaid
+      - Gunning Fog
+    ```
+
+    The `readability` extension evaluates text complexity using established readability formulas.
+
+    **Available metrics:**
+    - Flesch-Kincaid Grade Level
+    - Gunning Fog Index
+    - Coleman-Liau Index
+    - Automated Readability Index
+    - SMOG
+  </Tab>
+
+  <Tab title="spelling">
+    Checks spelling against dictionaries.
+
+    ```yaml
+    extends: spelling
+    message: "'%s' is misspelled"
+    level: error
+    dictionaries:
+      - en_US
+    ignore:
+      - custom-terms.txt
+    ```
+
+    The `spelling` extension integrates with Hunspell dictionaries and supports custom word lists.
+
+    **Key attributes:**
+    - `dictionaries`: Dictionary names to use
+    - `ignore`: Files containing terms to ignore
+    - `filters`: Regular expressions to skip
+  </Tab>
+
+  <Tab title="sequence">
+    Matches sequences of parts-of-speech.
+
+    ```yaml
+    extends: sequence
+    message: "Use 'by using' instead of '%s'"
+    level: warning
+    tokens:
+      - tag: NN
+      - pattern: using
+    ```
+
+    The `sequence` extension uses part-of-speech tagging to match grammatical patterns.
+
+    **Key attributes:**
+    - `tokens`: List of token definitions
+    - `tag`: POS tag to match (NN, VB, JJ, etc.)
+    - `pattern`: Exact text pattern
+    - `skip`: Number of tokens to skip
+  </Tab>
+
+  <Tab title="metric">
+    Evaluates custom formulas.
+
+    ```yaml
+    extends: metric
+    message: "This section has %s H2 headings"
+    formula: heading.h2
+    condition: "> 5"
+    ```
+
+    The `metric` extension lets you create custom formulas using document statistics like word count, sentence count, and heading counts.
+
+    **Available variables:**
+    - `words`, `sentences`, `paragraphs`
+    - `characters`, `syllables`, `complex_words`
+    - `heading.h1` through `heading.h6`
+    - `list`, `blockquote`, `pre`
+
+    Example formula:
+    ```yaml
+    formula: |
+      (0.39 * (words / sentences)) + (11.8 * (syllables / words)) - 15.59
+    condition: "> 8"
+    ```
+  </Tab>
+
+  <Tab title="script">
+    Runs custom Tengo scripts.
+
+    ```yaml
+    extends: script
+    message: "Too many paragraphs per section"
+    scope: raw
+    script: |
+      text := import("text")
+      matches := []
+
+      count := 0
+      for line in text.split(scope, "\n") {
+        if text.has_prefix(line, "#") {
+          count = 0
+        } else if count > 3 {
+          start := text.index(scope, line)
+          matches = append(matches, {begin: start, end: start + len(line)})
+          count = 0
+        } else if text.trim_space(line) == "" {
+          count += 1
+        }
+      }
+    ```
+
+    The `script` extension provides maximum flexibility for complex logic using the [Tengo scripting language](https://github.com/d5/tengo).
+
+    **Key attributes:**
+    - `script`: Inline Tengo code or file path
+    - `scope`: Usually `raw` to access markup
+  </Tab>
+</Tabs>
+
+## Rule definition structure
+
+Every rule file follows this basic structure:
+
+```yaml
+extends: existence
+message: "Consider removing '%s'"
+description: "Optional longer explanation"
+level: warning
+link: https://example.com/style-guide
+scope: text
+action:
+  name: remove
+```
+
+<Accordion title="Required fields">
+  - `extends`: The extension point (one of the 12 types)
+  - `message`: The alert message shown to users
+</Accordion>
+
+<Accordion title="Optional fields">
+  - `description`: Extended explanation of the rule
+  - `level`: Severity level (suggestion, warning, or error)
+  - `link`: URL to style guide or documentation
+  - `scope`: Where the rule applies (see [Scoping](/concepts/scoping))
+  - `action`: Automated fix definition
+  - `limit`: Maximum number of alerts per file
+</Accordion>
+
+## Built-in styles
+
+Vale includes a minimal built-in style called "Vale" with four rules:
+
+<AccordionGroup>
+  <Accordion title="Vale.Avoid">
+    An `existence` rule with an empty token list. You can customize this via your vocabulary.
+    
+    ```yaml
+    extends: existence
+    message: "Avoid using '%s'"
+    level: error
+    ```
+  </Accordion>
+
+  <Accordion title="Vale.Terms">
+    A `substitution` rule for term consistency, integrated with vocabularies.
+    
+    ```yaml
+    extends: substitution
+    message: "Use '%s' instead of '%s'"
+    level: error
+    ```
+  </Accordion>
+
+  <Accordion title="Vale.Repetition">
+    A `repetition` rule that catches repeated words.
+    
+    ```yaml
+    extends: repetition
+    message: "'%s' is repeated!"
+    level: error
+    ```
+  </Accordion>
+
+  <Accordion title="Vale.Spelling">
+    A `spelling` rule that integrates with your vocabularies.
+    
+    ```yaml
+    extends: spelling
+    message: "Did you really mean '%s'?"
+    level: error
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Using multiple styles
+
+You can apply multiple styles to your content by listing them in your configuration:
+
+```ini
+[*.md]
+BasedOnStyles = Vale, Google, Microsoft
+```
+
+Vale loads rules from all specified styles and applies them in order. If rules conflict, the last style's rules take precedence.
+
+## Style loading order
+
+Vale searches for styles in this order:
+
+1. The `StylesPath` directory specified in `.vale.ini`
+2. The global styles directory (when using `vale sync`)
+3. Built-in styles
+
+Implementation reference: `internal/check/definition.go:46-60`, `internal/check/definition.go:122-166`

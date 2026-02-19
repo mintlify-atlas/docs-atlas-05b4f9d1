@@ -1,0 +1,581 @@
+---
+title: "Transformations"
+description: "How Vale processes and transforms different markup formats"
+---
+
+## Overview
+
+Vale transforms markup files into analyzable text while preserving accurate line and column positions for alerts. The transformation system:
+
+- Strips markup syntax but tracks original locations
+- Applies ignore patterns (blocks and tokens)
+- Handles format-specific quirks (Markdown, AsciiDoc, HTML, etc.)
+- Routes code files through tree-sitter parsers
+
+This allows Vale to lint prose content while ignoring markup syntax and code.
+
+## Format Detection
+
+Vale automatically detects file formats using extension patterns (see `internal/core/format.go:60-95`):
+
+```go
+var FormatByExtension = map[string][]string{
+    `\.(?:md|mdown|markdown|markdn)$`: {".md", "markup"},
+    `\.(?:adoc|asciidoc|asc)$`:       {".adoc", "markup"},
+    `\.(?:rst|rest)$`:                {".rst", "markup"},
+    `\.(?:html|htm|shtml|xhtml)$`:    {".html", "markup"},
+    `\.(?:dita)$`:                    {".dita", "markup"},
+    `\.(?:org)$`:                     {".org", "markup"},
+    `\.(?:xml|xsd)$`:                 {".xml", "markup"},
+    `\.(?:go)$`:                      {".go", "code"},
+    `\.(?:py[3w]?)$`:                 {".py", "code"},
+    `\.(?:rs)$`:                      {".rs", "code"},
+    `\.(?:js|jsx)$`:                  {".js", "code"},
+    // ... many more
+}
+```
+
+Each format is categorized as:
+
+<Tabs>
+  <Tab title="markup">
+    **Markup formats** like Markdown, AsciiDoc, reStructuredText, HTML.
+
+    These are converted to HTML, then parsed to extract prose content while maintaining position tracking.
+
+    Examples: `.md`, `.adoc`, `.rst`, `.html`
+  </Tab>
+
+  <Tab title="code">
+    **Code formats** where prose appears in comments.
+
+    Vale uses tree-sitter grammars to extract comments and docstrings, ignoring actual code.
+
+    Examples: `.go`, `.py`, `.js`, `.rs`, `.java`
+  </Tab>
+
+  <Tab title="data">
+    **Data formats** like YAML, JSON, TOML.
+
+    Can be linted with custom views that extract specific fields.
+
+    Examples: `.yml`, `.json`, `.toml`
+  </Tab>
+
+  <Tab title="text">
+    **Plain text** files.
+
+    Linted directly with minimal processing.
+
+    Examples: `.txt`
+  </Tab>
+</Tabs>
+
+<Info>
+You can override format detection using `FormatAssociations` in `.vale.ini`.
+</Info>
+
+## The Transform Method
+
+Vale exposes the transformation process via `linter.Transform()` (see `internal/lint/lint.go:48-63`):
+
+```go
+func (l *Linter) Transform(f *core.File) (string, error) {
+    exts := extensionConfig{
+        Normed: f.NormedExt,
+        Real:   f.RealExt,
+    }
+    
+    return applyPatterns(l.Manager.Config, exts, f.Content)
+}
+```
+
+This applies:
+
+1. Block ignore patterns
+2. Token ignore patterns
+3. Built-in replacements
+
+### Using the transform Command
+
+View the transformed output:
+
+```bash
+vale transform document.md
+```
+
+<Tip>
+The `transform` command shows exactly what text Vale analyzes, useful for debugging why certain content is or isn't being linted.
+</Tip>
+
+## Markup Transformations
+
+Vale transforms markup files through a multi-stage pipeline:
+
+### Markdown Processing
+
+For Markdown files (see `internal/lint/md.go:36-55`):
+
+<Accordion title="Step 1: Lint Frontmatter">
+  Extract and lint YAML/TOML frontmatter:
+
+  ```go
+  err := l.lintMetadata(f)
+  if err != nil {
+      return err
+  }
+  ```
+
+  Frontmatter is linted separately from document body.
+</Accordion>
+
+<Accordion title="Step 2: Apply Ignore Patterns">
+  Transform the content using configured patterns:
+
+  ```go
+  s, err := l.Transform(f)
+  if err != nil {
+      return err
+  }
+  ```
+
+  This replaces ignored content with placeholders.
+</Accordion>
+
+<Accordion title="Step 3: Convert to HTML">
+  Use goldmark to parse Markdown:
+
+  ```go
+  var buf bytes.Buffer
+  if err = goldMd.Convert([]byte(s), &buf); err != nil {
+      return core.NewE100(f.Path, err)
+  }
+  ```
+
+  Goldmark supports GitHub Flavored Markdown and footnotes.
+</Accordion>
+
+<Accordion title="Step 4: Prepare Content">
+  Clean up special constructs (see `internal/lint/md.go:57-84`):
+
+  ```go
+  // Replace info strings with asterisks
+  body := reExInfo.ReplaceAllStringFunc(content, func(m string) string {
+      parts := strings.Split(m, "`")
+      tags := strings.Repeat("`", len(parts)-1)
+      span := strings.Repeat("*", nlp.StrLen(parts[len(parts)-1]))
+      return tags + span
+  })
+  
+  // Replace link references
+  body = reLinkRef.ReplaceAllStringFunc(body, func(m string) string {
+      return "][" + strings.Repeat("*", nlp.StrLen(m)-3) + "]"
+  })
+  ```
+
+  This prevents false matches in markup syntax.
+</Accordion>
+
+<Accordion title="Step 5: Parse HTML Tokens">
+  Extract prose from HTML while tracking positions:
+
+  ```go
+  return l.lintHTMLTokens(f, buf.Bytes(), 0)
+  ```
+
+  Vale walks the HTML token stream, analyzing text nodes.
+</Accordion>
+
+### Other Markup Formats
+
+Vale has specialized processors for:
+
+| Format | File | Key Features |
+|--------|------|-------------|
+| AsciiDoc | `internal/lint/adoc.go` | Uses Asciidoctor conversion |
+| reStructuredText | `internal/lint/rst.go` | Docutils-based processing |
+| HTML | `internal/lint/html.go` | Direct token parsing |
+| DITA | `internal/lint/dita.go` | XML with semantic understanding |
+| Org-mode | `internal/lint/org.go` | Emacs Org markup |
+| MDX | `internal/lint/mdx.go` | Markdown with JSX |
+
+Each handles format-specific details while producing HTML for analysis.
+
+## Code Transformations
+
+For code files, Vale extracts comments using tree-sitter:
+
+### Tree-Sitter Integration
+
+Vale uses tree-sitter grammars to parse code (see `internal/lint/code/`):
+
+```go
+// Example: Go comment extraction (internal/lint/code/go.go)
+func parseGo(src []byte, file *core.File) error {
+    parser := sitter.NewParser()
+    parser.SetLanguage(tree_sitter_go.GetLanguage())
+    
+    tree, _ := parser.ParseCtx(context.Background(), nil, src)
+    defer tree.Close()
+    
+    // Query for comments
+    query := `(comment) @comment`
+    // ... extract and process comments
+}
+```
+
+Supported languages:
+
+<Tabs>
+  <Tab title="Compiled Languages">
+    - **Go** (`.go`): Line and block comments
+    - **Rust** (`.rs`): `//`, `///`, `/* */` comments
+    - **C/C++** (`.c`, `.cpp`, `.h`): Standard C-style
+    - **Java** (`.java`): Including Javadoc
+  </Tab>
+
+  <Tab title="Scripting Languages">
+    - **Python** (`.py`): `#` comments and docstrings
+    - **JavaScript** (`.js`, `.jsx`): `//` and `/* */`
+    - **TypeScript** (`.ts`, `.tsx`): Same as JavaScript
+    - **Ruby** (`.rb`): `#` comments and RDoc
+  </Tab>
+
+  <Tab title="Other Languages">
+    - **CSS** (`.css`): `/* */` comments
+    - **YAML** (`.yml`): `#` comments (via custom parser)
+    - **Proto** (`.proto`): Protocol buffer comments
+    - **Julia** (`.jl`): `#` and multi-line comments
+  </Tab>
+</Tabs>
+
+<Note>
+For languages without tree-sitter support, Vale falls back to regex-based comment extraction (see `internal/core/format.go:20-56`).
+</Note>
+
+## Ignore Patterns
+
+Transformations respect two types of ignore patterns:
+
+### Block Ignores
+
+Ignore multi-line regions:
+
+```ini
+[*.md]
+BlockIgnores = (?s) *```.*?```, (?s) *:::.*?:::
+```
+
+Example:
+```markdown
+This is linted.
+
+```python
+This code block is ignored.
+```
+
+This is also linted.
+```
+
+### Token Ignores
+
+Ignore inline patterns:
+
+```ini
+[*.md]
+TokenIgnores = \$[^\$]+\$, `[^`]+`
+```
+
+Example:
+```markdown
+Check this text, but not `inline code` or $math$.
+```
+
+### How Ignores Work
+
+During transformation, Vale replaces ignored content with special markers that preserve length:
+
+```go
+func applyPatterns(cfg *Config, exts extensionConfig, content string) (string, error) {
+    // Apply block ignores first
+    for _, pattern := range cfg.BlockIgnores[exts.Normed] {
+        re := regexp.MustCompile(pattern)
+        content = re.ReplaceAllStringFunc(content, func(match string) string {
+            // Replace with markers of same length
+            return strings.Repeat("@", len(match))
+        })
+    }
+    
+    // Then token ignores
+    for _, pattern := range cfg.TokenIgnores[exts.Normed] {
+        // Similar replacement
+    }
+    
+    return content, nil
+}
+```
+
+This maintains accurate position tracking for alerts.
+
+## XSLT Transformations
+
+For XML-based formats, you can apply custom XSLT transformations before linting:
+
+```ini
+[*.xml]
+Transform = transforms/strip-metadata.xsl
+```
+
+Vale applies the transformation, then lints the result:
+
+```go
+transform := ""
+for sec, p := range config.Stylesheets {
+    pat, err := glob.Compile(sec)
+    if err != nil {
+        return err
+    } else if pat.Match(path) {
+        transform = p
+        break
+    }
+}
+```
+
+Useful for:
+- Removing metadata sections
+- Flattening nested structures
+- Extracting specific elements
+
+<Warning>
+XSLT transformations require external dependencies. Make sure `xsltproc` or similar is installed.
+</Warning>
+
+## Format Overrides
+
+Override Vale's format detection:
+
+```ini
+[*.txt]
+FormatAssociations = md
+```
+
+This tells Vale to treat `.txt` files as Markdown:
+
+```go
+func FormatFromExt(path string, mapping map[string]string) (string, string) {
+    base := strings.Trim(filepath.Ext(path), ".")
+    kind := getFormat("." + base)
+    
+    if format, found := mapping[base]; found {
+        if kind == "code" && getFormat("."+format) == "markup" {
+            return "." + format, "fragment"
+        }
+        base = format
+    }
+    // ...
+}
+```
+
+### Use Cases
+
+<Tabs>
+  <Tab title="Non-Standard Extensions">
+    ```ini
+    [*.mdx]
+    FormatAssociations = md
+    ```
+
+    Treat MDX as Markdown.
+  </Tab>
+
+  <Tab title="Embedded Markup">
+    ```ini
+    [*.py]
+    FormatAssociations = md
+    ```
+
+    Treat Python docstrings as Markdown:
+    ```python
+    def example():
+        """This **Markdown** is linted."""
+    ```
+  </Tab>
+
+  <Tab title="Plain Text">
+    ```ini
+    [*.log]
+    FormatAssociations = txt
+    ```
+
+    Lint log files as plain text.
+  </Tab>
+</Tabs>
+
+## Linting Pipeline
+
+The complete linting flow (see `internal/lint/lint.go:168-233`):
+
+```go
+func (l *Linter) lintFile(src string) lintResult {
+    file, err := core.NewFile(src, l.Manager.Config)
+    
+    // Determine format-specific linter
+    if file.Format == "markup" && !simple {
+        switch file.NormedExt {
+        case ".md":
+            err = l.lintMarkdown(file)
+        case ".adoc":
+            err = l.lintADoc(file)
+        case ".rst":
+            err = l.lintRST(file)
+        // ... other formats
+        }
+    } else if file.Format == "code" && !simple {
+        err = l.lintCode(file)
+    } else if file.Format == "data" && hasViews {
+        err = l.lintData(file)
+    } else {
+        err = l.lintLines(file)
+    }
+    
+    // Always check raw scope
+    raw := nlp.NewBlock("", strings.Join(file.Lines, ""), "raw"+file.RealExt)
+    err = l.lintBlock(file, raw, len(file.Lines), 0, true)
+    
+    return lintResult{file, err}
+}
+```
+
+<Info>
+The `raw` scope check runs on original content, before any transformations. Use it for rules that need to see markup syntax.
+</Info>
+
+## Debugging Transformations
+
+<Tabs>
+  <Tab title="View Transformed Content">
+    ```bash
+    vale transform document.md
+    ```
+
+    Shows the exact text Vale analyzes.
+  </Tab>
+
+  <Tab title="Check Format Detection">
+    ```bash
+    vale ls-config | grep Format
+    ```
+
+    Verify how Vale categorizes your files.
+  </Tab>
+
+  <Tab title="Test Ignore Patterns">
+    Add patterns incrementally and use `transform` to verify:
+
+    ```ini
+    [*.md]
+    BlockIgnores = (?s) *```.*?```
+    ```
+
+    ```bash
+    vale transform test.md | grep -v '@@@'
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Test Patterns" icon="flask">
+    Use `vale transform` to verify ignore patterns work as expected before committing.
+  </Card>
+
+  <Card title="Preserve Positions" icon="crosshairs">
+    When writing custom transformations, maintain character counts so Vale can report accurate locations.
+  </Card>
+
+  <Card title="Format-Specific Rules" icon="filter">
+    Use scopes to target specific document parts:
+    ```yaml
+    scope: heading
+    ```
+    Rather than broad ignore patterns.
+  </Card>
+
+  <Card title="XSLT for Complex XML" icon="code">
+    For complex XML formats, XSLT is more reliable than regex-based ignores.
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+<AccordionGroup>
+  <Accordion title="Ignore Shortcodes (Hugo, Jekyll)">
+    ```ini
+    [*.md]
+    TokenIgnores = {{.*?}}, {%.*?%}
+    ```
+
+    Prevents false positives from template syntax.
+  </Accordion>
+
+  <Accordion title="Ignore Attribute Values">
+    ```ini
+    [*.html]
+    TokenIgnores = (class|id)="[^"]+"
+    ```
+
+    Skip linting CSS classes and IDs.
+  </Accordion>
+
+  <Accordion title="Language-Specific Comments">
+    For Python docstrings as Markdown:
+
+    ```ini
+    [*.py]
+    FormatAssociations = md
+    TokenIgnores = `[^`]+`
+    ```
+  </Accordion>
+
+  <Accordion title="Mixed Content">
+    For files with both prose and data:
+
+    ```ini
+    [*.yml]
+    BlockIgnores = (?s)^---$.*?^---$
+    ```
+
+    Ignore YAML while linting embedded Markdown.
+  </Accordion>
+</AccordionGroup>
+
+## Transformation Architecture
+
+Key components:
+
+```
+internal/lint/
+├── lint.go          # Core linting logic
+├── md.go            # Markdown transformation
+├── html.go          # HTML token parsing
+├── ast.go           # AST walking for markup
+├── code.go          # Code file routing
+└── code/
+    ├── go.go        # Go tree-sitter parser
+    ├── py.go        # Python parser
+    ├── rs.go        # Rust parser
+    └── ...          # Other languages
+```
+
+Each format handler:
+1. Converts to a common representation (usually HTML)
+2. Walks the structure extracting text
+3. Maintains position mappings
+4. Yields blocks to the linter
+
+## Related Topics
+
+- [Scoping](/concepts/scoping) - Target specific document parts
+- [Configuration](/concepts/configuration) - Set up ignore patterns
+- [Format Detection](/reference/config/formats) - Format associations reference

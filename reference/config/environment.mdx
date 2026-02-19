@@ -1,0 +1,361 @@
+---
+title: Environment Variables
+description: Control Vale's behavior using environment variables.
+---
+
+Vale supports environment variables to override configuration settings and control runtime behavior without modifying configuration files.
+
+## Supported Variables
+
+Vale recognizes the following environment variables:
+
+<ParamField path="VALE_CONFIG_PATH" type="string">
+  Override the default configuration file search process by specifying an explicit path to a `.vale.ini` file.
+  
+  ```bash
+  export VALE_CONFIG_PATH=/path/to/.vale.ini
+  vale myfile.md
+  ```
+  
+  This takes precedence over the local search process but is overridden by the `--config` flag.
+</ParamField>
+
+<ParamField path="VALE_STYLES_PATH" type="string">
+  Specify the default location for the `StylesPath` when no configuration file defines it.
+  
+  ```bash
+  export VALE_STYLES_PATH=/usr/local/share/vale/styles
+  vale myfile.md
+  ```
+  
+  This is used as a fallback when:
+  - No `.vale.ini` file defines `StylesPath`
+  - No configuration file is found
+</ParamField>
+
+## Configuration Search Process
+
+Understanding how environment variables fit into Vale's configuration search is important:
+
+1. **Command-line flag** (`--config`): Highest priority
+2. **VALE_CONFIG_PATH**: Environment variable override
+3. **Local search**: Walk up directory tree for `.vale.ini`
+4. **Home directory**: Check `~/.vale.ini`
+5. **Default config**: Load from user config directory (if exists)
+
+For `StylesPath` specifically:
+
+1. **Config file**: `StylesPath` in `.vale.ini`
+2. **VALE_STYLES_PATH**: Environment variable fallback
+3. **XDG default**: `~/.local/share/vale/styles` (Unix) or equivalent
+
+## Use Cases
+
+### CI/CD Pipelines
+
+Set environment variables to use different configurations in CI:
+
+```yaml
+# .github/workflows/vale.yml
+name: Lint Documentation
+
+on: [pull_request]
+
+jobs:
+  vale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Run Vale
+        env:
+          VALE_CONFIG_PATH: ${{ github.workspace }}/.vale-ci.ini
+        run: vale docs/
+```
+
+This uses a CI-specific configuration without modifying the project's default `.vale.ini`.
+
+### Shared Styles
+
+Point multiple projects to a shared styles directory:
+
+```bash
+# In your shell profile
+export VALE_STYLES_PATH=/company/shared/vale-styles
+
+# Now all projects can access shared styles
+cd project1 && vale docs/
+cd project2 && vale docs/
+```
+
+Each project's `.vale.ini` can omit `StylesPath` and inherit the shared location.
+
+### Testing Configurations
+
+Test different configurations without modifying files:
+
+```bash
+# Test with strict config
+VALE_CONFIG_PATH=.vale-strict.ini vale docs/
+
+# Test with lenient config
+VALE_CONFIG_PATH=.vale-lenient.ini vale docs/
+
+# Normal operation
+vale docs/
+```
+
+### Multi-Environment Setup
+
+Use different configurations for different environments:
+
+```bash
+# Development: lenient checks
+export VALE_CONFIG_PATH=.vale-dev.ini
+
+# Staging: moderate checks
+export VALE_CONFIG_PATH=.vale-staging.ini
+
+# Production: strict checks
+export VALE_CONFIG_PATH=.vale-prod.ini
+```
+
+## Environment Variable Priority
+
+When multiple configuration sources are present:
+
+```bash
+# These are listed in priority order (highest to lowest)
+vale --config=custom.ini myfile.md  # CLI flag wins
+VALE_CONFIG_PATH=env.ini vale myfile.md  # Env var is second
+vale myfile.md  # Local .vale.ini is third
+```
+
+For `StylesPath`:
+
+```ini
+# Project .vale.ini
+StylesPath = .github/styles  # This value is used
+```
+
+```bash
+# Even with VALE_STYLES_PATH set
+export VALE_STYLES_PATH=/other/styles
+vale myfile.md  # Still uses .github/styles from config
+```
+
+The environment variable only applies when `StylesPath` is not set in any configuration file.
+
+## Shell Integration
+
+### Bash/Zsh
+
+Add to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+# Vale configuration
+export VALE_STYLES_PATH="$HOME/.local/share/vale/styles"
+
+# Optional: Vale config location
+export VALE_CONFIG_PATH="$HOME/.vale.ini"
+
+# Aliases for different configs
+alias vale-strict='VALE_CONFIG_PATH="$HOME/.vale-strict.ini" vale'
+alias vale-lenient='VALE_CONFIG_PATH="$HOME/.vale-lenient.ini" vale'
+```
+
+### Fish
+
+Add to your `~/.config/fish/config.fish`:
+
+```fish
+# Vale configuration
+set -x VALE_STYLES_PATH "$HOME/.local/share/vale/styles"
+
+# Optional: Vale config location
+set -x VALE_STYLES_PATH "$HOME/.vale.ini"
+
+# Aliases
+alias vale-strict 'VALE_CONFIG_PATH="$HOME/.vale-strict.ini" vale'
+```
+
+### Windows PowerShell
+
+Add to your profile (`$PROFILE`):
+
+```powershell
+# Vale configuration
+$env:VALE_STYLES_PATH = "$HOME\.local\share\vale\styles"
+$env:VALE_CONFIG_PATH = "$HOME\.vale.ini"
+
+# Functions for different configs
+function Vale-Strict {
+    $env:VALE_CONFIG_PATH = "$HOME\.vale-strict.ini"
+    vale @args
+}
+```
+
+## Docker Integration
+
+Pass environment variables to Vale running in a container:
+
+```bash
+# Using docker run
+docker run -it --rm \
+  -v $(pwd):/workspace \
+  -e VALE_CONFIG_PATH=/workspace/.vale-ci.ini \
+  -e VALE_STYLES_PATH=/workspace/.github/styles \
+  jdkato/vale /workspace/docs
+```
+
+```yaml
+# Using docker-compose.yml
+version: '3'
+services:
+  vale:
+    image: jdkato/vale
+    volumes:
+      - .:/workspace
+    environment:
+      - VALE_CONFIG_PATH=/workspace/.vale-ci.ini
+      - VALE_STYLES_PATH=/workspace/.github/styles
+    command: /workspace/docs
+```
+
+## Configuration Inspection
+
+Verify which configuration Vale is using:
+
+```bash
+# See active configuration
+vale ls-config
+
+# See configuration search paths
+vale ls-dirs
+
+# See environment variables
+vale ls-vars
+```
+
+The `ls-config` output shows the merged configuration from all sources, including environment variables.
+
+<Accordion title="Example ls-config output with environment variables">
+```json
+{
+  "StylesPath": "/usr/local/share/vale/styles",
+  "MinAlertLevel": 1,
+  "Paths": [
+    "/usr/local/share/vale/styles"
+  ],
+  "ConfigFiles": [
+    "/home/user/project/.vale.ini"
+  ],
+  "RootINI": "/home/user/project/.vale.ini",
+  "Flags": {
+    "Path": "/home/user/project/.vale.ini"
+  }
+}
+```
+
+This shows that `VALE_STYLES_PATH` was used even though the config file didn't specify it.
+</Accordion>
+
+## Debugging Environment Issues
+
+### Check Variable Values
+
+```bash
+# Unix/Linux/macOS
+echo $VALE_CONFIG_PATH
+echo $VALE_STYLES_PATH
+
+# Windows PowerShell
+echo $env:VALE_CONFIG_PATH
+echo $env:VALE_STYLES_PATH
+
+# Windows Command Prompt
+echo %VALE_CONFIG_PATH%
+echo %VALE_STYLES_PATH%
+```
+
+### Verify Configuration Loading
+
+```bash
+# Run with debug output
+vale --debug myfile.md 2>&1 | grep -i config
+
+# Check which config file is loaded
+vale ls-dirs
+```
+
+### Clear Environment Variables
+
+```bash
+# Unix/Linux/macOS
+unset VALE_CONFIG_PATH
+unset VALE_STYLES_PATH
+
+# Windows PowerShell
+Remove-Item Env:\VALE_CONFIG_PATH
+Remove-Item Env:\VALE_STYLES_PATH
+```
+
+## Best Practices
+
+<Tip>
+**Use environment variables for**:
+- CI/CD pipeline configurations
+- User-specific preferences
+- Temporary configuration overrides
+- Shared team resources
+</Tip>
+
+<Tip>
+**Avoid environment variables for**:
+- Project-specific configurations (use `.vale.ini` instead)
+- Version-controlled settings
+- Required project dependencies
+</Tip>
+
+### Team Workflow Example
+
+```bash
+# .envrc (using direnv)
+# Shared styles for the team
+export VALE_STYLES_PATH="$HOME/.local/share/company-vale-styles"
+
+# Project-specific config is in .vale.ini (version controlled)
+# Personal preferences can be in ~/.config/vale/.vale.ini
+```
+
+This approach:
+
+- Keeps project config in version control
+- Shares team styles via environment variable
+- Allows personal customization in global config
+
+## Advanced: Configuration Hierarchy
+
+The complete configuration loading order:
+
+```
+1. Default values (hardcoded in Vale)
+   ↓
+2. Default styles path (from XDG or VALE_STYLES_PATH)
+   ↓
+3. Project .vale.ini (from local search or VALE_CONFIG_PATH)
+   ↓
+4. Global ~/.config/vale/.vale.ini (if exists and not --ignore-global)
+   ↓
+5. Package configs from .vale-config/ (if using packages)
+   ↓
+6. Command-line flags (highest priority)
+```
+
+Environment variables (`VALE_CONFIG_PATH`, `VALE_STYLES_PATH`) affect steps 2 and 3.
+
+## See Also
+
+- [Configuration Overview](/reference/config/overview) - Complete config file reference
+- [CLI Commands](/reference/cli/ls-vars) - View supported environment variables
+- [Packages](/advanced/packages) - Working with external configuration packages

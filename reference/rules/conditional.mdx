@@ -1,0 +1,184 @@
+---
+title: Conditional
+description: Ensure the presence of one pattern implies the presence of another
+---
+
+The `conditional` rule type enforces logical dependencies between patterns. It ensures that if a "first" pattern appears, a corresponding "second" pattern must also exist in the document.
+
+## How It Works
+
+The `conditional` rule implements an antecedent-consequent relationship:
+1. It searches for the "second" pattern (the consequent/definition)
+2. It stores all matches in a file-level registry
+3. It then searches for the "first" pattern (the antecedent)
+4. If "first" is found but wasn't registered in step 2, it triggers an alert
+
+## Parameters
+
+<ParamField path="first" type="string" required>
+  A regex pattern representing the antecedent—the pattern that triggers the requirement for "second". This typically includes a capture group.
+</ParamField>
+
+<ParamField path="second" type="string" required>
+  A regex pattern representing the consequent—the pattern that must exist when "first" is found. This typically includes a capture group that matches the captured value from "first".
+</ParamField>
+
+<ParamField path="ignorecase" type="boolean" default="false">
+  Makes pattern matching case-insensitive when set to `true`.
+</ParamField>
+
+<ParamField path="exceptions" type="array">
+  An array of strings or patterns that should be excluded from the "first" check.
+</ParamField>
+
+<ParamField path="vocab" type="boolean" default="true">
+  If `true`, Vale will use your vocabulary files as additional exceptions.
+</ParamField>
+
+## Examples
+
+### Acronym Definitions
+
+Ensure acronyms are defined before use:
+
+```yaml
+extends: conditional
+message: "'%s' has no definition"
+level: error
+scope: text
+ignorecase: false
+first: '\b([A-Z]{3,5})\b'
+second: '([A-Z]{3,5}): (?:\b[A-Z][a-z]+ )+|(?:\b[A-Z][a-z]+ )+\(([A-Z]{3,5})\)'
+exceptions:
+  - ABC
+  - ADD
+```
+
+This catches:
+- ❌ "Use WHO guidelines" (no definition)
+- ✅ "Use World Health Organization (WHO) guidelines" (defined)
+- ✅ "WHO: World Health Organization" (defined)
+
+### Technical Term Introduction
+
+Require technical terms to be introduced with their full name:
+
+```yaml
+extends: conditional
+message: "Introduce '%s' with its full name first."
+level: warning
+first: '\b(API|SDK|CLI|IDE)\b'
+second: 'Application Programming Interface|Software Development Kit|Command Line Interface|Integrated Development Environment'
+exceptions:
+  - API
+```
+
+### Variable Declaration
+
+Ensure variables are declared before use (in code examples):
+
+```yaml
+extends: conditional
+message: "Variable '%s' is used before declaration."
+level: error
+scope: code
+first: '\$([a-z_][a-z0-9_]*)'
+second: '(let|const|var)\s+([a-z_][a-z0-9_]*)'
+```
+
+### Cross-Reference Validation
+
+Ensure referenced sections exist:
+
+```yaml
+extends: conditional
+message: "Section '%s' is referenced but doesn't exist."
+level: error
+first: 'see section (\d+\.\d+)'
+second: '^## (\d+\.\d+)'
+```
+
+### Brand Name Introduction
+
+Require brand names to be introduced with registration marks:
+
+```yaml
+extends: conditional
+message: "First use of '%s' should include trademark symbol."
+level: suggestion
+first: '\b(ProductName|BrandName)\b'
+second: '(ProductName|BrandName)[™®]'
+```
+
+## Use Cases
+
+<Info>
+The `conditional` rule is ideal for:
+- Enforcing acronym definitions
+- Validating cross-references
+- Checking prerequisite explanations
+- Ensuring proper term introductions
+- Validating code examples (variable declarations)
+</Info>
+
+## Capture Groups
+
+<Note>
+Both `first` and `second` patterns should include capture groups. The captured values from `second` are stored in the file registry, and the captured value from `first` is checked against this registry.
+
+The typical pattern is:
+- `first`: Captures the term to validate
+- `second`: Captures the same term in its definition/introduction context
+</Note>
+
+## Order of Evaluation
+
+<Warning>
+The `conditional` rule searches for `second` (the definition) first, then checks for `first` (the usage). This means:
+
+1. Definitions can appear anywhere in the document
+2. They don't need to precede the usage
+3. The rule is order-independent
+
+If you need to enforce that definitions appear before usage, consider using the `sequence` rule type instead.
+</Warning>
+
+## Technical Details
+
+Internally, the `conditional` rule (internal/check/conditional.go:60-106):
+
+1. Searches for all matches of the `second` pattern (consequent)
+2. Extracts capture groups and stores them in `f.Sequences`
+3. Searches for all matches of the `first` pattern (antecedent)
+4. For each `first` match, checks if it exists in `f.Sequences`
+5. If not found and not in exceptions, creates an alert
+
+The storage mechanism uses file-level state:
+```go
+for _, m := range mat[1:] {
+    if len(m) > 0 {
+        f.Sequences = append(f.Sequences, m)
+    }
+}
+```
+
+This allows the rule to track all definitions found in the document and check subsequent usages against this registry.
+
+## Multiple Capture Groups
+
+Both patterns can use multiple capture groups. All captured values from `second` are registered:
+
+```yaml
+extends: conditional
+message: "'%s' needs definition"
+first: '\b([A-Z]{3,5})\b'
+second: '([A-Z]{3,5}): (?:\b[A-Z][a-z]+ )+|(?:\b[A-Z][a-z]+ )+\(([A-Z]{3,5})\)'
+```
+
+This allows flexible definition formats—either "WHO: World Health Organization" or "World Health Organization (WHO)".
+
+## Related Rule Types
+
+- **existence**: Use when you want to flag terms without requiring definitions
+- **sequence**: Use when you need to enforce order or proximity of patterns
+- **consistency**: Use when you want to ensure variants aren't mixed

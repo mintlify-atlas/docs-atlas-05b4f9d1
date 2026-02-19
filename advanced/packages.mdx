@@ -1,0 +1,360 @@
+---
+title: "Packages"
+description: "Sync and manage remote Vale configuration packages"
+---
+
+## Overview
+
+Vale's package system allows you to distribute and share complete style configurations, including:
+
+- Style rules
+- Configuration files
+- Vocabularies and dictionaries
+- Custom templates and scripts
+
+Packages can be loaded from URLs, local paths, or the official Vale library, making it easy to maintain consistent writing standards across teams and projects.
+
+## The Sync Command
+
+The `vale sync` command downloads and installs packages defined in your `.vale.ini` configuration file.
+
+### Basic Usage
+
+```bash
+vale sync
+```
+
+This command:
+
+1. Reads the `Packages` section from your root `.vale.ini`
+2. Downloads each package from its source (URL, path, or library)
+3. Installs styles into your `StylesPath`
+4. Merges configuration files into `.vale-config/`
+
+<Tip>
+The sync command shows a progress bar for each package being installed.
+</Tip>
+
+### Configuration
+
+Define packages in your `.vale.ini` file:
+
+```ini
+[*]
+BasedOnStyles = Vale, MyCompany
+
+Packages = https://github.com/errata-ai/Microsoft/releases/latest/download/Microsoft.zip, \
+           https://github.com/errata-ai/Google/releases/latest/download/Google.zip
+```
+
+## Package Sources
+
+Vale supports three types of package sources:
+
+<Tabs>
+  <Tab title="Remote URLs">
+    Download packages directly from URLs:
+
+    ```ini
+    Packages = https://github.com/errata-ai/Microsoft/releases/latest/download/Microsoft.zip
+    ```
+
+    Vale automatically:
+    - Downloads the ZIP archive
+    - Extracts it to a temporary directory
+    - Installs the contents to your `StylesPath`
+
+    <Note>
+    Only HTTP(S) protocols are supported. SSH or other protocols will return an error.
+    </Note>
+  </Tab>
+
+  <Tab title="Local Paths">
+    Reference packages on your local filesystem:
+
+    ```ini
+    Packages = /path/to/my/style-package, \
+               ./relative/path/to/package.zip
+    ```
+
+    Vale supports:
+    - Directories containing style packages
+    - ZIP archives
+
+    Local packages are useful for:
+    - Development and testing
+    - Air-gapped environments
+    - Custom internal styles
+  </Tab>
+
+  <Tab title="Library Names">
+    Use short names from the official Vale library:
+
+    ```ini
+    Packages = Microsoft, Google, write-good
+    ```
+
+    Vale automatically resolves these names by:
+    1. Fetching the library index from `https://raw.githubusercontent.com/errata-ai/styles/master/library.json`
+    2. Looking up the package URL
+    3. Downloading and installing the package
+
+    <Tip>
+    Library names are the simplest way to get started with popular style guides.
+    </Tip>
+  </Tab>
+</Tabs>
+
+## Package Structure
+
+A Vale package can contain the following structure:
+
+```
+MyPackage/
+├── styles/
+│   ├── MyStyle/
+│   │   ├── Rule1.yml
+│   │   └── Rule2.yml
+│   └── config/
+│       ├── vocabularies/
+│       ├── dictionaries/
+│       └── templates/
+└── .vale.ini
+```
+
+### Package Installation Process
+
+When Vale installs a package, it follows this process (see `cmd/vale/sync.go:88-142`):
+
+<Accordion title="Step 1: Download and Extract">
+  For remote packages:
+  
+  ```go
+  dir, err := os.MkdirTemp("", name)
+  if err = fetch(url, dir); err != nil {
+      return err
+  }
+  ```
+
+  Vale creates a temporary directory and downloads the package.
+</Accordion>
+
+<Accordion title="Step 2: Install Styles">
+  The `styles/` directory is copied to your `StylesPath`:
+
+  ```go
+  path := filepath.Join(root, "styles")
+  if system.IsDir(path) {
+      if err := moveDir(path, styles); err != nil {
+          return err
+      }
+  }
+  ```
+
+  All style rules are made available immediately.
+</Accordion>
+
+<Accordion title="Step 3: Merge Configuration">
+  The `config/` directories (vocabularies, templates, etc.) are merged:
+
+  ```go
+  for _, dir := range core.ConfigDirs {
+      loc1 := filepath.Join(path, dir)
+      if system.IsDir(loc1) {
+          loc2 := filepath.Join(styles, dir)
+          if err := moveDir(loc1, loc2); err != nil {
+              return err
+          }
+      }
+  }
+  ```
+
+  This preserves your existing configuration while adding package assets.
+</Accordion>
+
+<Accordion title="Step 4: Process Nested Packages">
+  If the package includes a `.vale.ini` with its own `Packages` section:
+
+  ```go
+  if system.FileExists(cfg) {
+      pkgs, err := core.GetPackages(cfg)
+      for idx, pkg := range pkgs {
+          if err = readPkg(pkg, styles, idx); err != nil {
+              return err
+          }
+      }
+  }
+  ```
+
+  Vale recursively installs nested dependencies, creating a complete style pipeline.
+</Accordion>
+
+## Configuration Pipeline
+
+Vale stores package configurations in a special `.vale-config/` directory within your `StylesPath`. This pipeline allows packages to:
+
+- Define their own configuration
+- Override base settings
+- Include additional packages
+
+### Pipeline Structure
+
+```
+StylesPath/
+├── .vale-config/
+│   ├── 0-Microsoft.ini
+│   ├── 1-Google.ini
+│   └── 2-MyCompany.ini
+├── Microsoft/
+├── Google/
+└── MyCompany/
+```
+
+Configuration files are numbered to indicate load order.
+
+<Warning>
+The `.vale-config/` directory is recreated during each sync. Don't manually edit files here.
+</Warning>
+
+## Initialization Process
+
+Before syncing, Vale initializes the `StylesPath` (see `cmd/vale/sync.go:15-33`):
+
+```go
+func initPath(cfg *core.Config) error {
+    stylesPath := cfg.StylesPath()
+    
+    if !system.IsDir(stylesPath) {
+        if err := os.MkdirAll(cfg.StylesPath(), os.ModePerm); err != nil {
+            return err
+        }
+    }
+    
+    // Remove any existing .vale-config directory
+    err := os.RemoveAll(filepath.Join(stylesPath, core.PipeDir))
+    return err
+}
+```
+
+This ensures a clean state for each sync operation.
+
+## Example Workflows
+
+<Tabs>
+  <Tab title="Team Setup">
+    Share a common configuration across your team:
+
+    1. Create a repository with your style package:
+       ```
+       company-style/
+       ├── styles/
+       │   └── Company/
+       │       ├── Terminology.yml
+       │       └── Branding.yml
+       └── .vale.ini
+       ```
+
+    2. Host it on GitHub and create a release
+
+    3. Team members add to their `.vale.ini`:
+       ```ini
+       Packages = https://github.com/company/style/releases/latest/download/company-style.zip
+       ```
+
+    4. Run `vale sync` to install
+  </Tab>
+
+  <Tab title="Multi-Style Project">
+    Combine multiple style guides:
+
+    ```ini
+    [*]
+    BasedOnStyles = Vale, Microsoft, Google, write-good
+
+    Packages = Microsoft, Google, write-good
+    ```
+
+    Then sync:
+    ```bash
+    vale sync
+    ```
+
+    All three styles are installed and enabled.
+  </Tab>
+
+  <Tab title="Development Workflow">
+    Test a style package during development:
+
+    ```ini
+    Packages = /Users/dev/my-style-package
+    ```
+
+    Make changes to your style, then:
+    ```bash
+    vale sync
+    vale test.md
+    ```
+
+    The latest version is used immediately.
+  </Tab>
+</Tabs>
+
+## Error Handling
+
+Vale provides detailed error messages for common issues:
+
+<AccordionGroup>
+  <Accordion title="Invalid URL or Path">
+    ```
+    Error: 'https://invalid' is not a valid URL or the directory doesn't exist
+    ```
+
+    Occurs when Vale can't access the package source. Check:
+    - URL is accessible
+    - Path exists
+    - You have read permissions
+  </Accordion>
+
+  <Accordion title="Unsupported Protocol">
+    ```
+    Error: unsupported protocol scheme
+    ```
+
+    Vale only supports HTTP(S) URLs. Convert git:// or ssh:// URLs to HTTPS.
+  </Accordion>
+
+  <Accordion title="Missing Package">
+    If a library name isn't found:
+    - Check spelling
+    - Verify the package exists in the library
+    - Use the full URL as a fallback
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Version Control" icon="code-branch">
+    Pin package versions using specific release URLs rather than `latest` for reproducible builds.
+  </Card>
+
+  <Card title="Local Development" icon="laptop-code">
+    Use local paths during development, then switch to URLs for production.
+  </Card>
+
+  <Card title="Sync Regularly" icon="arrows-rotate">
+    Run `vale sync` when:
+    - Pulling changes that modify `.vale.ini`
+    - Updating to new package versions
+    - Joining a new project
+  </Card>
+
+  <Card title="Package Organization" icon="folder-tree">
+    Structure packages with clear directories and include a README explaining the rules.
+  </Card>
+</CardGroup>
+
+## Related Commands
+
+- [`vale ls-config`](/reference/cli/ls-config) - View the current configuration including loaded packages
+- [`vale ls-dirs`](/reference/cli/ls-dirs) - Check your `StylesPath` location

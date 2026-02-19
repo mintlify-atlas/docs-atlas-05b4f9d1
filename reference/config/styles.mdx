@@ -1,0 +1,359 @@
+---
+title: Styles Configuration
+description: Configure style paths, enable styles, and control rule behavior in Vale.
+---
+
+Styles are collections of rules that define writing guidelines. Vale's style system allows you to load existing style packages, create custom rules, and control how they're applied across different file types.
+
+## StylesPath
+
+The `StylesPath` option defines where Vale looks for style definitions. This is a required core configuration option.
+
+```ini
+StylesPath = .github/styles
+```
+
+The path can be:
+
+- **Relative**: Resolved relative to the `.vale.ini` file
+- **Absolute**: Full path to the styles directory
+- **Environment variable**: Set via `VALE_STYLES_PATH`
+
+<Info>
+Vale v3.0+ supports multiple styles paths through configuration merging. If both a project config and global config define `StylesPath`, both directories are searched.
+</Info>
+
+### Directory Structure
+
+Your `StylesPath` should contain style directories and configuration subdirectories:
+
+```
+styles/
+├── Vale/              # Built-in Vale style
+├── Google/            # Google developer documentation style
+├── Microsoft/         # Microsoft Writing Style Guide
+└── config/
+    ├── vocabularies/  # Project-specific terms
+    ├── dictionaries/  # Custom dictionaries
+    ├── templates/     # Rule templates
+    ├── ignore/        # Ignore files
+    ├── actions/       # Custom actions
+    ├── scripts/       # Script-based rules
+    ├── filters/       # Content filters
+    └── views/         # Custom views
+```
+
+<Note>
+The `config/` subdirectory was introduced in Vale v3.0 to standardize the location of configuration files. Older style packages may use the legacy flat structure.
+</Note>
+
+## BasedOnStyles
+
+The `BasedOnStyles` option specifies which styles to load and apply. It can be defined globally or per syntax.
+
+### Global Styles
+
+```ini
+[*]
+BasedOnStyles = Vale, Google
+```
+
+This applies the Vale and Google styles to all files.
+
+### Syntax-Specific Styles
+
+```ini
+[*.md]
+BasedOnStyles = Vale, Microsoft
+
+[*.rst]
+BasedOnStyles = Vale, Joblint
+
+[docs/api/*.md]
+BasedOnStyles = Vale, Google, Microsoft
+```
+
+Syntax-specific styles override global styles for matching files.
+
+<ParamField path="BasedOnStyles" type="array">
+  Comma-separated list of style names. Each name must correspond to a directory in your `StylesPath`.
+  
+  ```ini
+  BasedOnStyles = Vale, Google, Microsoft
+  ```
+</ParamField>
+
+## Rule Configuration
+
+Individual rules within styles can be controlled with fine-grained settings.
+
+### Enabling and Disabling Rules
+
+```ini
+[*]
+# Enable with default severity
+Vale.Spelling = YES
+
+# Disable completely
+Google.Passive = NO
+
+# Set specific severity
+Microsoft.Contractions = warning
+Google.Headings = error
+```
+
+### Severity Levels
+
+<ParamField path="YES" type="level">
+  Enable the rule with its default severity from the rule definition.
+</ParamField>
+
+<ParamField path="NO" type="level">
+  Disable the rule completely.
+</ParamField>
+
+<ParamField path="suggestion" type="level">
+  Enable as a suggestion (informational).
+</ParamField>
+
+<ParamField path="warning" type="level">
+  Enable as a warning (should fix).
+</ParamField>
+
+<ParamField path="error" type="level">
+  Enable as an error (must fix).
+</ParamField>
+
+### Rule Precedence
+
+When the same rule is configured in multiple sections, the most specific section wins:
+
+```ini
+[*]
+Vale.Spelling = YES
+
+[*.md]
+Vale.Spelling = warning
+
+[docs/internal/*.md]
+Vale.Spelling = NO
+```
+
+For a file at `docs/internal/notes.md`, `Vale.Spelling` would be disabled.
+
+## Style Packages
+
+Vale supports both local styles and remote packages.
+
+### Local Styles
+
+Create a directory in your `StylesPath` with `.yml` rule files:
+
+```
+styles/
+└── MyStyle/
+    ├── Acronyms.yml
+    ├── Contractions.yml
+    └── Headings.yml
+```
+
+Enable it in your config:
+
+```ini
+[*.md]
+BasedOnStyles = MyStyle
+```
+
+### Remote Packages
+
+Define packages in the core section:
+
+```ini
+Packages = Google, Microsoft, https://example.com/custom-style.zip
+```
+
+Install them with:
+
+```bash
+vale sync
+```
+
+Packages are downloaded to `.vale-config/` in your `StylesPath` and automatically loaded.
+
+<Tip>
+See the [Packages documentation](/advanced/packages) for creating and distributing reusable style packages.
+</Tip>
+
+## Vocabulary Integration
+
+Vocabularies work alongside styles to define project-specific terminology:
+
+```ini
+Vocab = ProjectName
+
+[*.md]
+BasedOnStyles = Vale, Microsoft
+```
+
+The `Vocab` setting loads accepted and rejected terms from `config/vocabularies/ProjectName/`:
+
+```
+config/vocabularies/ProjectName/
+├── accept.txt  # Terms to accept
+└── reject.txt  # Terms to reject
+```
+
+Style rules that check spelling will automatically recognize terms from your vocabularies.
+
+## Example: Multi-Style Configuration
+
+Here's a complete example showing how to use multiple styles effectively:
+
+```ini
+StylesPath = .github/styles
+MinAlertLevel = suggestion
+
+Vocab = Acme
+Packages = Microsoft, Google
+
+# Default: use base Vale style
+[*]
+BasedOnStyles = Vale
+
+# User-facing documentation
+[docs/*.md]
+BasedOnStyles = Vale, Microsoft, Google
+Microsoft.Contractions = warning
+Google.Headings = error
+
+# API documentation  
+[docs/api/*.md]
+BasedOnStyles = Vale, Google
+Vale.Spelling = warning
+
+# Internal notes
+[notes/*.md]
+BasedOnStyles = Vale
+Vale.Spelling = suggestion
+
+# Code comments
+[*.{js,ts,py}]
+BasedOnStyles = Vale
+Vale.Spelling = YES
+Vale.Terms = NO
+```
+
+## Style Discovery
+
+Vale searches for styles in all configured `StylesPath` directories. When multiple configs are merged, their paths are combined:
+
+```ini
+# Project config: .vale.ini
+StylesPath = .github/styles
+
+# Global config: ~/.config/vale/.vale.ini  
+StylesPath = ~/vale-styles
+```
+
+Vale will search both directories for styles, with project-specific styles taking precedence.
+
+## Debugging Style Configuration
+
+View your active style configuration:
+
+```bash
+# See full merged config
+vale ls-config
+
+# See where Vale looks for files
+vale ls-dirs
+```
+
+The output shows:
+
+- Which styles are loaded
+- Which rules are active
+- Rule severity levels
+- Search paths
+
+<Accordion title="Example ls-config output">
+```json
+{
+  "Checks": [
+    "Vale.Spelling",
+    "Microsoft.Contractions",
+    "Google.Headings"
+  ],
+  "GBaseStyles": [
+    "Vale",
+    "Microsoft"
+  ],
+  "SBaseStyles": {
+    "*.md": [
+      "Vale",
+      "Microsoft",
+      "Google"
+    ]
+  },
+  "RuleToLevel": {
+    "Microsoft.Contractions": "warning",
+    "Google.Headings": "error"
+  },
+  "Paths": [
+    "/home/user/.local/share/vale/styles",
+    "/project/.github/styles"
+  ]
+}
+```
+</Accordion>
+
+## Common Patterns
+
+### Strict Documentation Standards
+
+```ini
+MinAlertLevel = warning
+
+[docs/*.md]
+BasedOnStyles = Vale, Microsoft, Google
+# Enforce all rules as errors
+Microsoft.Contractions = error
+Microsoft.Passive = error
+Google.Headings = error
+Google.Parens = error
+```
+
+### Gradual Adoption
+
+```ini
+MinAlertLevel = suggestion
+
+[*]
+BasedOnStyles = Vale
+# Start with suggestions only
+Vale.Spelling = suggestion
+Vale.Repetition = suggestion
+
+# Enforce in critical areas
+[docs/public/*.md]
+Vale.Spelling = error
+```
+
+### Multiple Audiences
+
+```ini
+# Technical documentation
+[docs/developers/*.md]
+BasedOnStyles = Vale, Google
+Google.We = NO  # Allow "we" in developer docs
+
+# End-user documentation
+[docs/users/*.md]
+BasedOnStyles = Vale, Microsoft
+Microsoft.Contractions = warning
+Microsoft.Passive = error
+```
+
+<Warning>
+Mixing too many style guides can lead to conflicting rules. Start with one primary style and add others selectively.
+</Warning>

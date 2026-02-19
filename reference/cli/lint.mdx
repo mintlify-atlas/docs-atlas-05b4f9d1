@@ -1,0 +1,319 @@
+---
+title: "vale (lint command)"
+description: "Lint prose files for style and grammar issues using Vale's markup-aware engine."
+---
+
+The default Vale command lints files, directories, or text input against your configured style rules. This is Vale's primary operation.
+
+## Usage
+
+```bash
+vale [options] [input...]
+```
+
+<Note>
+  The lint command is the default operation—you don't need to specify a command name. Just run `vale` followed by your input.
+</Note>
+
+## Input Methods
+
+Vale accepts three types of input, automatically detecting which method you're using:
+
+### Files and Directories
+
+Provide one or more file or directory paths:
+
+```bash
+vale README.md
+vale docs/guide.md docs/api.md
+vale content/
+```
+
+When linting directories, Vale recursively processes all files matching your configuration's format settings.
+
+### String Arguments
+
+If the argument doesn't match an existing file or directory path, Vale treats it as literal text to lint:
+
+```bash
+vale "This is some text to check for errors."
+```
+
+The text is linted as if it were a `.txt` file (or use `--ext` to specify a different format).
+
+### Standard Input
+
+Pipe content to Vale via stdin:
+
+```bash
+cat myfile.md | vale
+echo "Some text" | vale --ext=.md
+git diff | vale --ext=.txt
+```
+
+<Info>
+  When using stdin, use the `--ext` flag to specify the file format so Vale applies the correct syntax processing. Use `--path` to match configuration scope patterns.
+</Info>
+
+## Output Formats
+
+Control output format with the `--output` flag:
+
+<Tabs>
+  <Tab title="CLI (default)">
+    Human-readable terminal output with color and formatting:
+    
+    ```bash
+    vale myfile.md
+    ```
+    
+    ```
+    myfile.md
+     1:10  error  Use 'web' instead of 'internet'.  Style.Terms
+     3:5   warning  Consider removing 'very'.        Vale.Adverbs
+    
+    ✖ 1 error, 1 warning
+    ```
+  </Tab>
+  
+  <Tab title="JSON">
+    Machine-readable JSON format for tooling integration:
+    
+    ```bash
+    vale --output=JSON myfile.md
+    ```
+    
+    ```json
+    {
+      "myfile.md": [
+        {
+          "Action": {
+            "Name": "",
+            "Params": []
+          },
+          "Check": "Style.Terms",
+          "Description": "",
+          "Line": 1,
+          "Link": "",
+          "Message": "Use 'web' instead of 'internet'.",
+          "Severity": "error",
+          "Span": [10, 18],
+          "Match": "internet"
+        }
+      ]
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Line">
+    Simple line-based format, one alert per line:
+    
+    ```bash
+    vale --output=line myfile.md
+    ```
+    
+    ```
+    myfile.md:1:10:Style.Terms:Use 'web' instead of 'internet'.
+    myfile.md:3:5:Vale.Adverbs:Consider removing 'very'.
+    ```
+  </Tab>
+  
+  <Tab title="Custom template">
+    Use a custom Go template file:
+    
+    ```bash
+    vale --output=path/to/template.tmpl myfile.md
+    ```
+  </Tab>
+</Tabs>
+
+## Common Options
+
+<ParamField path="--config" type="string">
+  Specify a custom configuration file path.
+  
+  ```bash
+  vale --config=/path/to/.vale.ini myfile.md
+  ```
+  
+  By default, Vale searches for `.vale.ini` in the current directory and parent directories.
+</ParamField>
+
+<ParamField path="--minAlertLevel" type="string">
+  Set the minimum alert severity to display. Valid values: `suggestion`, `warning`, `error`.
+  
+  ```bash
+  vale --minAlertLevel=error myfile.md
+  ```
+  
+  Only alerts at or above this level will be shown in output and affect the exit code.
+</ParamField>
+
+<ParamField path="--glob" type="string" default="*">
+  Filter files using a glob pattern when linting directories.
+  
+  ```bash
+  vale --glob='*.{md,mdx}' docs/
+  ```
+</ParamField>
+
+<ParamField path="--filter" type="string">
+  Apply only rules matching the filter expression.
+  
+  ```bash
+  # Only check spelling rules
+  vale --filter='*.Spelling' myfile.md
+  
+  # Only check rules from the Microsoft style
+  vale --filter='Microsoft.*' myfile.md
+  ```
+</ParamField>
+
+<ParamField path="--ignore-syntax" type="boolean" default="false">
+  Disable syntax-aware processing and lint files line-by-line as plain text.
+  
+  ```bash
+  vale --ignore-syntax myfile.md
+  ```
+  
+  This can be faster but loses context from markup structure.
+</ParamField>
+
+<ParamField path="--no-exit" type="boolean" default="false">
+  Always exit with code 0, even when errors are found.
+  
+  ```bash
+  vale --no-exit myfile.md
+  ```
+  
+  Useful in CI when you want to see results but not fail the build.
+</ParamField>
+
+<ParamField path="--ext" type="string" default=".txt">
+  Specify the file extension for stdin input.
+  
+  ```bash
+  echo "# Heading" | vale --ext=.md
+  ```
+</ParamField>
+
+<ParamField path="--path" type="string">
+  Associate a file path with stdin for configuration matching.
+  
+  ```bash
+  cat content.md | vale --path=docs/guide.md
+  ```
+  
+  The path helps Vale determine which configuration scope to apply based on your `.vale.ini` patterns.
+</ParamField>
+
+## Examples
+
+<CodeGroup>
+```bash Basic linting
+vale README.md
+```
+
+```bash Lint multiple files
+vale docs/intro.md docs/guide.md content/blog.md
+```
+
+```bash Lint directory
+vale docs/
+```
+
+```bash Lint with glob pattern
+vale --glob='*.{md,mdx}' .
+```
+
+```bash JSON output for CI
+vale --output=JSON --minAlertLevel=error .
+```
+
+```bash Check only spelling
+vale --filter='*.Spelling' docs/
+```
+
+```bash Lint git diff
+git diff main | vale --ext=.md --no-exit
+```
+
+```bash Lint string
+vale "Check this text for style issues."
+```
+
+```bash Stdin with format
+cat document.md | vale --ext=.md --path=docs/guide.md
+```
+</CodeGroup>
+
+## How Vale Processes Files
+
+<Steps>
+  <Step title="Configuration loading">
+    Vale searches for `.vale.ini` starting in the current directory and moving up the directory tree. It then loads styles and rules based on your configuration.
+  </Step>
+  
+  <Step title="File discovery">
+    For directory inputs, Vale recursively finds files matching your format associations and glob patterns.
+  </Step>
+  
+  <Step title="Syntax processing">
+    Vale parses each file using a markup-aware processor based on the file extension (Markdown, AsciiDoc, HTML, etc.).
+  </Step>
+  
+  <Step title="Scope matching">
+    Vale applies rules to specific parts of the document based on scope configuration (e.g., only headings, or skip code blocks).
+  </Step>
+  
+  <Step title="Rule execution">
+    Each enabled rule is tested against the scoped text, generating alerts for matches.
+  </Step>
+  
+  <Step title="Output generation">
+    Alerts are formatted according to the output format and filtered by minimum alert level.
+  </Step>
+</Steps>
+
+## Exit Codes
+
+| Code | Condition |
+|------|------------|
+| `0` | No errors found, or `--no-exit` was used |
+| `1` | One or more lint errors at or above `minAlertLevel` |
+| `2` | Runtime error (invalid config, file not found, permission denied) |
+
+<Tip>
+  Use `--no-exit` in CI pipelines when you want to collect lint results without failing the build.
+</Tip>
+
+## Configuration Matching
+
+Vale applies different configurations based on file paths using glob patterns in your `.vale.ini`:
+
+```ini .vale.ini
+[*.md]
+BasedOnStyles = Vale, MyStyle
+
+[docs/*.md]
+BasedOnStyles = Vale, MyStyle, APIStyle
+```
+
+When linting, Vale determines which configuration section matches each file and applies those rules.
+
+<Info>
+  The `--path` option lets you specify a virtual path for stdin input, allowing Vale to match the correct configuration section.
+</Info>
+
+## Performance Tips
+
+- Use `--glob` to limit which files are processed
+- Use `--filter` to check only specific rules when debugging
+- Use `--ignore-syntax` for faster processing of large plain text files
+- Configure `.vale.ini` to exclude directories with `IgnorePaths`
+
+## Related Commands
+
+- [ls-config](/reference/cli/ls-config) - View your current configuration
+- [ls-metrics](/reference/cli/ls-metrics) - Analyze file metrics
+- [sync](/reference/cli/sync) - Install style packages

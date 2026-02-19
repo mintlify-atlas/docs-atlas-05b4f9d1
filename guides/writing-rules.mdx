@@ -1,0 +1,406 @@
+---
+title: Writing Custom Rules
+description: Learn how to create custom Vale rules with step-by-step examples
+---
+
+Vale provides 12 extension points for writing custom rules. Each extension point is designed to address specific writing problems, from simple word checks to complex conditional logic.
+
+## Extension Points Overview
+
+Vale supports the following extension points:
+
+- **existence**: Check for the presence of specific words or patterns
+- **substitution**: Suggest replacements for matched text
+- **occurrence**: Enforce min/max limits on pattern occurrences
+- **repetition**: Detect repeated words or phrases
+- **consistency**: Ensure consistent usage between alternatives
+- **conditional**: Enforce that one pattern implies another
+- **capitalization**: Check capitalization styles
+- **readability**: Calculate readability scores
+- **spelling**: Check spelling with custom dictionaries
+- **sequence**: Ensure ordered patterns
+- **metric**: Calculate custom text metrics
+- **script**: Execute Tengo scripts for complex logic
+
+## Rule Anatomy
+
+Every Vale rule is a YAML file with required and optional keys:
+
+### Required Keys
+
+<CodeGroup>
+```yaml Basic Rule Structure
+extends: existence
+message: "Consider removing '%s'"
+level: warning
+```
+</CodeGroup>
+
+- **extends**: The extension point (one of the 12 types above)
+- **message**: The alert message (use `%s` for the matched text)
+- **level**: `error`, `warning`, or `suggestion`
+
+### Common Optional Keys
+
+- **scope**: Where to apply the rule (e.g., `text`, `heading`, `paragraph.text`)
+- **link**: URL to documentation about the rule
+- **action**: Automated fix configuration
+- **exceptions**: Array of patterns to ignore
+
+<Info>
+  All rules must have the `.yml` extension and follow the naming convention `StyleName/RuleName.yml`
+</Info>
+
+## Writing an Existence Rule
+
+The `existence` extension point checks for the presence of tokens. It's the most common rule type.
+
+<Steps>
+  <Step title="Create the rule file">
+    Create a file at `styles/MyStyle/Hedging.yml`:
+    
+    ```yaml
+    extends: existence
+    message: "Consider removing '%s'"
+    ignorecase: true
+    level: warning
+    tokens:
+      - appear to be
+      - arguably
+      - could
+      - might
+      - perhaps
+      - possibly
+      - probably
+      - seem(s)?
+    ```
+  </Step>
+  
+  <Step title="Configure the pattern matching">
+    The `existence` extension compiles your tokens into a regex pattern. By default, it uses word boundaries:
+    
+    ```yaml
+    extends: existence
+    message: "Avoid using '%s'"
+    level: error
+    tokens:
+      - very
+      - really
+    # Matches: \b(very|really)\b
+    ```
+    
+    Use `nonword: true` to remove word boundaries:
+    
+    ```yaml
+    extends: existence
+    message: "Don't use contractions"
+    level: warning
+    nonword: true
+    tokens:
+      - "n't"
+    ```
+  </Step>
+  
+  <Step title="Add exceptions">
+    Use the `exceptions` key to ignore specific matches:
+    
+    ```yaml
+    extends: existence
+    message: "Avoid abbreviations"
+    level: warning
+    tokens:
+      - '\b[A-Z]{2,}\b'
+    exceptions:
+      - API
+      - URL
+      - HTTP
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Vale uses the `regexp2` library which supports advanced regex features like lookarounds and backreferences.
+</Note>
+
+## Writing a Substitution Rule
+
+The `substitution` extension suggests replacements for matched patterns.
+
+```yaml styles/MyStyle/Abbreviations.yml
+extends: substitution
+message: "Use '%s'"
+ignorecase: false
+level: error
+swap:
+  '(?:eg)': e.g.,
+  '(?:ie)': i.e.,
+  '(?:e\.g\.)\s*': e.g.,
+  '(?:i\.e\.)\s*': i.e.,
+```
+
+The keys in `swap` are regex patterns, and the values are the suggested replacements.
+
+### Multiple Suggestions
+
+Provide multiple alternatives using the pipe character:
+
+```yaml
+extends: substitution
+message: "Use '%s' instead of '%s'"
+level: error
+action:
+  name: replace
+swap:
+  utilize: use|employ
+  leverage: use|take advantage of
+```
+
+### Case Preservation
+
+Use `capitalize: true` to preserve the case of the original text:
+
+```yaml
+extends: substitution
+message: "Consider using '%s' instead of '%s'"
+ignorecase: true
+capitalize: true
+level: error
+action:
+  name: replace
+swap:
+  mankind: humankind
+# "Mankind" → "Humankind"
+# "mankind" → "humankind"
+```
+
+## Writing an Occurrence Rule
+
+The `occurrence` extension enforces min/max limits on pattern matches.
+
+```yaml styles/MyStyle/SentenceLength.yml
+extends: occurrence
+message: "Sentences should have between 5 and 25 words (%s found)"
+scope: sentence
+level: suggestion
+max: 25
+min: 5
+token: '\b\w+\b'
+```
+
+<Accordion title="How occurrence counting works">
+  The `occurrence` rule counts all matches of the `token` pattern within the specified `scope`. If the count is outside the `min`/`max` range, it triggers an alert.
+  
+  - Use `max` to set an upper limit
+  - Use `min` to set a lower limit
+  - Use both for a range
+</Accordion>
+
+## Writing a Repetition Rule
+
+The `repetition` extension detects repeated tokens.
+
+```yaml styles/MyStyle/Repetition.yml
+extends: repetition
+message: "'%s' is repeated"
+level: error
+ignorecase: true
+alpha: true
+tokens:
+  - '[^\s.!?]+'
+```
+
+- **alpha**: Only check alphabetic tokens (ignores numbers)
+- **max**: Maximum allowed repetitions (default: 0)
+
+## Writing a Conditional Rule
+
+The `conditional` extension ensures that the presence of one pattern implies another.
+
+```yaml styles/MyStyle/Acronyms.yml
+extends: conditional
+message: "'%s' has no definition"
+level: error
+first: '\b([A-Z]{3,5})\b'
+second: '([A-Z]{3,5}): (?:\b[A-Z][a-z]+ )+|(?:\b[A-Z][a-z]+ )+\(([A-Z]{3,5})\)'
+exceptions:
+  - API
+  - URL
+```
+
+<Warning>
+  The `first` pattern matches what you're looking for (e.g., "WHO"). The `second` pattern matches the definition (e.g., "World Health Organization (WHO)"). If `first` is found without a prior `second`, an alert is raised.
+</Warning>
+
+## Writing a Capitalization Rule
+
+The `capitalization` extension checks capitalization styles.
+
+```yaml styles/MyStyle/Headings.yml
+extends: capitalization
+message: "'%s' should be in title case"
+level: warning
+scope: heading
+match: $title
+style: AP
+exceptions:
+  - iOS
+  - macOS
+```
+
+### Built-in Styles
+
+- **$title**: Title case (AP or Chicago style)
+- **$sentence**: Sentence case
+- **$lower**: All lowercase
+- **$upper**: All uppercase
+- Custom regex pattern
+
+## Adding Actions for Automatic Fixes
+
+Actions enable Vale to suggest automatic fixes.
+
+### Replace Action
+
+```yaml
+extends: substitution
+message: "Use '%s' instead of '%s'"
+level: error
+action:
+  name: replace
+swap:
+  utilize: use
+```
+
+### Edit Action
+
+The `edit` action modifies the matched text:
+
+```yaml
+extends: existence
+message: "Use '%s' instead of '%s'"
+level: error
+action:
+  name: edit
+  params: [regex, '\s+', ' ']
+tokens:
+  - '\w+\s+\w+'
+```
+
+Supported edit operations:
+- `truncate`: Remove text after a delimiter
+- `trim`, `trim_left`, `trim_right`: Remove characters
+- `regex`: Apply regex replacement
+- `split`: Split and take specific part
+
+### Remove Action
+
+```yaml
+extends: substitution
+message: "Remove '%s'"
+level: warning
+action:
+  name: replace
+swap:
+  'obviously': ''
+  'clearly': ''
+```
+
+## Using Scopes
+
+Scopes control where rules apply. Vale has a hierarchical scope system:
+
+```yaml
+# Apply only to paragraph text (not headings, lists, etc.)
+scope: paragraph.text
+
+# Apply to all headings
+scope: heading
+
+# Apply to code blocks
+scope: code
+
+# Apply to everything including markup
+scope: raw
+
+# Combine with negation
+scope: text & ~heading
+```
+
+<Tip>
+  Use `scope: raw` when you need access to markup syntax, like checking heading formatting.
+</Tip>
+
+## Writing a Script Rule
+
+For complex logic, use the `script` extension with Tengo:
+
+```yaml styles/MyStyle/SectionLength.yml
+extends: script
+message: "Consider inserting a new section heading"
+link: https://tengolang.com/
+scope: raw
+script: |
+  text := import("text")
+  
+  matches := []
+  p_limit := 3  // max 3 paragraphs per section
+  
+  count := 0
+  for line in text.split(scope, "\n") {
+    if text.has_prefix(line, "#") {
+      count = 0  // New section; reset
+    } else if line == "" {
+      count++
+    }
+    
+    if count > p_limit {
+      // Add match with custom message
+      matches = append(matches, {
+        begin: 0,
+        end: text.len(line),
+        message: "Section has too many paragraphs"
+      })
+    }
+  }
+```
+
+<Info>
+  Scripts have access to the `text`, `fmt`, and `math` standard library modules. The `os` module is disabled for security.
+</Info>
+
+## Testing Your Rules
+
+Use Vale's CLI commands to test rules:
+
+```bash
+# Compile a rule to see the generated regex
+vale compile styles/MyStyle/MyRule.yml
+
+# Run a single rule against a file
+vale run styles/MyStyle/MyRule.yml test.md
+
+# Check your full config
+vale ls-config
+```
+
+## Best Practices
+
+1. **Start simple**: Begin with `existence` rules before moving to complex patterns
+2. **Use exceptions liberally**: Prevent false positives with the `exceptions` key
+3. **Test thoroughly**: Run rules against representative documents
+4. **Provide clear messages**: Use `%s` placeholders to show matched text
+5. **Add links**: Include documentation URLs for context
+6. **Scope appropriately**: Use scopes to avoid checking markup
+7. **Use word boundaries**: Set `nonword: false` (default) for most word-based checks
+8. **Leverage vocab**: Set `vocab: true` to respect project vocabularies
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Custom Styles" icon="folder" href="/guides/custom-styles">
+    Learn how to organize rules into reusable style packages
+  </Card>
+  <Card title="Rule Reference" icon="book" href="/reference/rules/existence">
+    Explore detailed documentation for each extension point
+  </Card>
+</CardGroup>

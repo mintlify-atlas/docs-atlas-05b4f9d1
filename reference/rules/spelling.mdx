@@ -1,0 +1,306 @@
+---
+title: Spelling
+description: Check spelling using Hunspell dictionaries
+---
+
+The `spelling` rule type performs spell-checking using Hunspell dictionaries. It supports custom dictionaries, filters, and exception lists for flexible spell-checking configurations.
+
+## How It Works
+
+The `spelling` rule loads Hunspell dictionaries (`.dic` and `.aff` files), tokenizes text into words, and checks each word against the dictionary. Words not found in the dictionary (and not in exception lists) trigger alerts.
+
+## Parameters
+
+<ParamField path="dictionaries" type="array">
+  An array of dictionary names to load (without extensions). Vale looks for corresponding `.dic` and `.aff` files.
+</ParamField>
+
+<ParamField path="aff" type="string">
+  Direct path to a Hunspell `.aff` (affix) file. Used with `dic` for custom dictionaries.
+</ParamField>
+
+<ParamField path="dic" type="string">
+  Direct path to a Hunspell `.dic` (dictionary) file. Used with `aff` for custom dictionaries.
+</ParamField>
+
+<ParamField path="dicpath" type="string">
+  Path to a directory containing Hunspell dictionary files. Vale searches this directory for dictionaries.
+</ParamField>
+
+<ParamField path="filters" type="array">
+  An array of regex patterns. Words matching any filter are skipped during spell-checking.
+</ParamField>
+
+<ParamField path="ignore" type="array | string">
+  Path(s) to word list files. Words in these files are excluded from spell-checking.
+</ParamField>
+
+<ParamField path="custom" type="boolean" default="false">
+  When `true`, disables default filters. When `false`, applies built-in filters for camelCase, ACRONYMS, and non-alphabetic characters.
+</ParamField>
+
+<ParamField path="append" type="boolean" default="false">
+  When `true`, includes default dictionaries in addition to specified ones.
+</ParamField>
+
+## Examples
+
+### Basic Spell Checking
+
+Use a custom dictionary:
+
+```yaml
+extends: spelling
+message: "'%s' is a typo!"
+level: error
+dictionaries:
+  - en_US-large
+```
+
+### Custom Dictionary with Suggestions
+
+Enable spelling suggestions:
+
+```yaml
+extends: spelling
+message: "'%s' is a typo!"
+custom: true
+append: false
+level: error
+action:
+  name: suggest
+dictionaries:
+  - test
+```
+
+### With Custom Filters
+
+Filter out specific patterns:
+
+```yaml
+extends: spelling
+message: "Spelling error: '%s'"
+level: warning
+dictionaries:
+  - en_US
+filters:
+  - '[A-Z]{2,}'          # Skip ACRONYMS
+  - '\w+\.\w+'           # Skip domain.names
+  - '[0-9]+[a-zA-Z]+'    # Skip version1alpha
+```
+
+### Using Ignore Files
+
+Exclude project-specific terms:
+
+```yaml
+extends: spelling
+message: "Did you mean '%s'?"
+level: warning
+dictionaries:
+  - en_GB
+ignore:
+  - project-terms.txt
+  - ignore/brands.txt
+```
+
+### Direct Dictionary Paths
+
+Specify exact dictionary files:
+
+```yaml
+extends: spelling
+message: "'%s' is misspelled"
+level: error
+aff: /path/to/custom.aff
+dic: /path/to/custom.dic
+```
+
+### Dictionary Path
+
+Use a custom dictionary directory:
+
+```yaml
+extends: spelling
+message: "Spelling error: '%s'"
+level: warning
+dicpath: config/dictionaries
+dictionaries:
+  - medical
+  - technical
+```
+
+### Multiple Dictionaries
+
+Combine multiple dictionaries:
+
+```yaml
+extends: spelling
+message: "'%s' is not in the dictionary"
+level: error
+dictionaries:
+  - en_US
+  - technical
+  - brands
+append: true
+```
+
+## Default Filters
+
+When `custom: false` (default), Vale applies these built-in filters:
+
+1. **CamelCase**: `[A-Z]{1}[a-z]+[A-Z]+\w+` - Skips camelCase and PascalCase
+2. **All Caps**: `[A-Z]+$` - Skips ACRONYMS
+3. **Non-Alpha**: `[^a-zA-Z_']` - Skips words with numbers or special chars
+
+Set `custom: true` to disable these and only use your own filters.
+
+## Ignore File Paths
+
+Vale searches for ignore files in multiple locations:
+
+1. Absolute paths (if provided)
+2. Relative to `StylesPath`
+3. Relative to `StylesPath/config/ignore/`
+
+For `Vale.Spelling`, Vale automatically checks `config/ignore/` for all `.txt` files.
+
+## Use Cases
+
+<Info>
+The `spelling` rule is ideal for:
+- Standard spell-checking with language dictionaries
+- Technical documentation with custom terminology
+- Multi-language content
+- Brand name validation
+- Code documentation with programming terms
+</Info>
+
+## Vale.Spelling
+
+Vale includes a built-in `Vale.Spelling` rule that:
+
+- Automatically loads default dictionaries from `config/dictionaries/`
+- Reads ignore files from `config/ignore/`
+- Respects your vocabulary files (`accept.txt`)
+- Works out of the box with no configuration
+
+```yaml
+# .vale.ini
+StylesPath = styles
+Packages = https://github.com/errata-ai/vale-defaults
+
+[*]
+BasedOnStyles = Vale
+Vale.Spelling = YES
+```
+
+## Technical Details
+
+Internally, the `spelling` rule (internal/check/spelling.go:165-199):
+
+1. Creates a Hunspell spell checker with specified dictionaries
+2. Loads ignore files using `AddWordListFile`
+3. Tokenizes text using `nlp.WordTokenizer`
+4. Applies filters to each token
+5. Checks remaining tokens with `gs.Spell(word)`
+6. For misspellings, creates alerts with optional suggestions
+
+The filtering loop:
+```go
+OUTER:
+for _, word := range nlp.WordTokenizer.Tokenize(txt) {
+    for _, filter := range s.Filters {
+        if filter.MatchString(word) {
+            continue OUTER
+        }
+    }
+    if !s.gs.Spell(word) && !isMatch(s.exceptRe, word) {
+        // Create alert
+    }
+}
+```
+
+## Suggestion Action
+
+When using `action.name: suggest`, Vale uses Hunspell's suggestion engine:
+
+```yaml
+action:
+  name: suggest
+```
+
+This enables editors to provide spelling correction suggestions via Vale's LSP/action protocol.
+
+## Dictionary File Format
+
+Hunspell dictionaries consist of two files:
+
+### `.dic` file (Dictionary)
+```
+50000
+word1
+word2/flags
+```
+First line is word count, followed by words with optional flags.
+
+### `.aff` file (Affix)
+```
+SET UTF-8
+TRY aeiou
+SFX A Y 1
+SFX A   0 ing .
+```
+Defines encoding, character sets, and affix rules for word variations.
+
+## Custom Filters Example
+
+Complex filter patterns for code documentation:
+
+```yaml
+filters:
+  # Skip camelCase/PascalCase
+  - '[a-z][A-Z]'
+  # Skip snake_case
+  - '\w+_\w+'
+  # Skip SCREAMING_SNAKE_CASE
+  - '[A-Z_]{2,}'
+  # Skip kebab-case
+  - '\w+-\w+'
+  # Skip file paths
+  - '/\w+'
+  # Skip URLs
+  - 'https?://'
+  # Skip version numbers
+  - '\d+\.\d+'
+```
+
+## Vocabulary Integration
+
+Vale automatically adds terms from your `accept.txt` vocabulary files as exceptions:
+
+```
+# config/vocabularies/MyProject/accept.txt
+TensorFlow
+Kubernetes
+PostgreSQL
+```
+
+These are automatically excluded from spell-checking when `vocab: true` (default).
+
+## Performance Considerations
+
+<Tip>
+Spell-checking can be slow on large documents. Optimize performance by:
+
+1. Using specific dictionaries (not massive generic ones)
+2. Adding comprehensive ignore files for project terminology
+3. Using filters to skip known-good patterns
+4. Setting `custom: true` to disable default processing if not needed
+</Tip>
+
+## Related Rule Types
+
+- **existence**: Use to flag specific misspellings with corrections
+- **substitution**: Use to suggest specific replacements for common typos
+- **consistency**: Use to enforce consistent spelling of variant terms

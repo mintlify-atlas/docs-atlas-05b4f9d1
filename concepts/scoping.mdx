@@ -1,0 +1,332 @@
+---
+title: "Scoping"
+description: "How Vale targets specific parts of documents with scope selectors"
+---
+
+Scoping controls where rules apply within your documents. Instead of checking every character, you can target specific markup elements like headings, paragraphs, or code blocks.
+
+## What is a scope?
+
+A scope is a named section of text identified by its position in the document structure. Vale uses scope selectors (similar to CSS selectors) to target markup elements.
+
+For example:
+- `heading.h1` targets level-1 headings
+- `paragraph` targets paragraphs
+- `code` targets code spans
+- `text` targets all text content
+
+## Defining scopes in rules
+
+Add a `scope` key to any rule to control where it applies:
+
+```yaml
+extends: existence
+message: "Don't use '%s' in headings"
+scope: heading
+tokens:
+  - basically
+  - literally
+```
+
+Without a `scope` key, rules default to `scope: text`, which applies to most text content but excludes code and URLs.
+
+## Scope selectors
+
+Scope selectors use dot notation to specify nested elements:
+
+<Tabs>
+  <Tab title="Basic selectors">
+    Target common markup elements:
+
+    ```yaml
+    scope: heading        # All headings
+    scope: paragraph      # All paragraphs  
+    scope: list           # All list items
+    scope: blockquote     # Blockquotes
+    scope: table          # Tables
+    scope: raw            # Raw markup (includes everything)
+    scope: text           # Text content (excludes code/URLs)
+    scope: summary        # Document summary (for metrics)
+    ```
+  </Tab>
+
+  <Tab title="Specific levels">
+    Target specific heading levels:
+
+    ```yaml
+    scope: heading.h1     # Only <h1> headings
+    scope: heading.h2     # Only <h2> headings
+    scope: heading.h3     # Only <h3> headings
+    # ... through heading.h6
+    ```
+
+    Example use case:
+    ```yaml
+    extends: capitalization
+    message: "'%s' should be in title case"
+    scope: heading.h1
+    match: $title
+    style: AP
+    ```
+  </Tab>
+
+  <Tab title="Format-specific">
+    Target elements in specific formats:
+
+    ```yaml
+    scope: paragraph.rst  # reStructuredText paragraphs
+    scope: text.html      # HTML text content
+    scope: code.python    # Python code blocks
+    ```
+
+    The format suffix helps Vale apply rules contextually based on the file format.
+  </Tab>
+
+  <Tab title="Combined scopes">
+    Use `&` to require multiple conditions:
+
+    ```yaml
+    # Only headings that aren't h1:
+    scope: heading & ~heading.h1
+
+    # Only text in paragraphs:
+    scope: text & paragraph
+    ```
+
+    The `~` prefix negates a selector, creating an exclusion.
+  </Tab>
+</Tabs>
+
+## Negated scopes
+
+Use the `~` prefix to exclude specific scopes:
+
+```yaml
+extends: existence
+message: "Avoid '%s'"
+scope: text
+tokens:
+  - TODO
+  - FIXME
+```
+
+To exclude this from code blocks:
+
+```yaml
+extends: existence  
+message: "Avoid '%s'"
+scope: ~code
+tokens:
+  - TODO
+  - FIXME
+```
+
+This applies the rule everywhere except code blocks.
+
+## Multiple scopes
+
+Apply a rule to multiple scopes by passing a list:
+
+```yaml
+extends: capitalization
+message: "'%s' should be in sentence case"
+scope:
+  - heading.h2
+  - heading.h3
+  - heading.h4
+match: $sentence
+```
+
+Vale treats this as an OR condition—the rule applies if any scope matches.
+
+## The raw scope
+
+The `raw` scope provides access to the original markup before Vale processes it. This is useful for:
+
+1. **Markup-specific rules**: Check Markdown link syntax, HTML attributes, etc.
+2. **Cross-element patterns**: Find patterns spanning multiple elements
+3. **Custom scripts**: Access the full document structure
+
+Example checking Markdown link syntax:
+
+```yaml
+extends: existence
+message: 'Link "%s" must use the .md extension'
+scope: raw
+raw:
+  - '\[.+\]\((https?:){0}[\w\/\.-]+(\.html).*?\)'
+```
+
+<Warning>
+  Using `scope: raw` can match markup itself, not just content. Be specific with your patterns to avoid false positives.
+</Warning>
+
+## The summary scope
+
+The `summary` scope is special—it applies to document-level metrics rather than text spans:
+
+```yaml
+extends: metric
+message: "Document has %s words"
+scope: summary
+formula: words
+condition: "> 5000"
+```
+
+Rules using `metric` or `readability` extensions automatically use `summary` scope. You can't change this.
+
+## How scoping works internally
+
+Vale converts documents into a structured representation before applying rules:
+
+1. **Parse**: Convert markup to an internal format
+2. **Tokenize**: Break content into blocks with scope labels
+3. **Match**: Compare block scopes against rule scopes
+4. **Apply**: Run matching rules on corresponding blocks
+
+Each block has:
+- `Scope`: The block's scope identifier (e.g., "heading.h1")
+- `Parent`: The parent scope (if nested)
+- `Text`: The actual content
+
+From `internal/check/scope.go:49-60`:
+
+```go
+func (s Scope) Matches(blk nlp.Block) bool {
+    candidate := NewSelector(strings.Split(blk.Scope, "."))
+    parent := NewSelector(strings.Split(blk.Parent, "."))
+
+    for _, sel := range s.Selectors {
+        if s.partMatches(candidate, parent, sel) {
+            return true
+        }
+    }
+
+    return false
+}
+```
+
+## Scope matching rules
+
+Vale uses hierarchical matching for scopes:
+
+<Steps>
+  <Step title="Split into parts">
+    Convert selectors into dot-separated parts:
+    - `heading.h1` becomes `["heading", "h1"]`
+    - `text.html` becomes `["text", "html"]`
+  </Step>
+
+  <Step title="Check containment">
+    A block matches if its scope contains all parts of the selector.
+    
+    Example: A block with scope `heading.h1.markdown` matches:
+    - `heading` ✓
+    - `heading.h1` ✓
+    - `heading.h1.markdown` ✓
+    
+    But not:
+    - `heading.h2` ✗
+    - `paragraph` ✗
+  </Step>
+
+  <Step title="Apply negations">
+    Check negated selectors against the block's parent scope.
+    
+    For `scope: heading & ~heading.h1`:
+    - Must have "heading" in scope ✓
+    - Must not have "heading.h1" in parent ✓
+  </Step>
+
+  <Step title="Handle special cases">
+    `raw` and `summary` scopes bypass normal matching—they apply at different processing stages.
+  </Step>
+</Steps>
+
+## Common patterns
+
+<AccordionGroup>
+  <Accordion title="Check only headings">
+    ```yaml
+    extends: capitalization
+    message: "'%s' should be in title case"
+    scope: heading
+    match: $title
+    ```
+  </Accordion>
+
+  <Accordion title="Check everything except headings">
+    ```yaml
+    extends: occurrence
+    message: "Too many commas"
+    scope: ~heading
+    token: ','
+    max: 3
+    ```
+  </Accordion>
+
+  <Accordion title="Check specific heading levels">
+    ```yaml
+    extends: occurrence
+    message: "Section titles should be under 70 characters"
+    scope: heading & ~heading.h1
+    token: .
+    max: 70
+    ```
+  </Accordion>
+
+  <Accordion title="Check code blocks only">
+    ```yaml
+    extends: existence
+    message: "Avoid '%s' in code examples"
+    scope: code
+    tokens:
+      - foo
+      - bar
+    ```
+  </Accordion>
+
+  <Accordion title="Check raw markup">
+    ```yaml
+    extends: existence
+    message: "Use consistent link format"
+    scope: raw
+    raw:
+      - '\[.+\]\(.+\)'
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Deprecated scopes
+
+These scopes were removed in Vale v3:
+
+<Warning>
+  - `code` (inline code spans) → Use `scope: raw` instead
+  - `link` → Use `scope: raw` instead  
+  - `strong` → Use `scope: raw` instead
+  - `emphasis` → Use `scope: raw` instead
+
+  Vale will return an error if you use these scopes. Migrate to `scope: raw` with appropriate regex patterns.
+</Warning>
+
+From `internal/check/definition.go:406-411`:
+
+```go
+if core.StringInSlice(scope, inlineScopes) {
+    return core.NewE201FromTarget(
+        fmt.Sprintf("scope '%v' is no longer supported; use 'raw' instead.", scope),
+        "scope",
+        path)
+}
+```
+
+## Validation
+
+Vale validates scopes when loading rules:
+
+1. **No spaces**: `heading.h1` ✓, `heading. h1` ✗
+2. **Known selectors**: Warns about unrecognized scope names
+3. **No deprecated selectors**: Errors on old inline scopes
+
+Implementation reference: `internal/check/scope.go:10-121`, `internal/check/definition.go:391-423`

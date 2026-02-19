@@ -1,0 +1,287 @@
+---
+title: "vale sync"
+description: "Download and install external style packages and configuration sources."
+---
+
+The `sync` command downloads and installs Vale style packages from external sources defined in your `.vale.ini` configuration file.
+
+## Usage
+
+```bash
+vale sync
+```
+
+This command reads the `Packages` setting from your `.vale.ini` file and downloads each package to your `StylesPath` directory.
+
+<Note>
+  Run `vale sync` after adding new packages to your configuration or when setting up Vale in a new environment.
+</Note>
+
+## Configuration
+
+Define packages in the root section of your `.vale.ini` file:
+
+```ini .vale.ini
+StylesPath = styles
+MinAlertLevel = suggestion
+
+Packages = https://github.com/errata-ai/Microsoft/releases/latest/download/Microsoft.zip, \
+           https://github.com/errata-ai/write-good/releases/latest/download/write-good.zip
+
+[*]
+BasedOnStyles = Vale, Microsoft, write-good
+```
+
+<ParamField path="Packages" type="string">
+  Comma-separated list of package URLs to download. Each URL should point to a `.zip` file containing a Vale style package.
+  
+  Packages can come from:
+  - GitHub releases (most common)
+  - Direct URLs to `.zip` files
+  - Any HTTP/HTTPS endpoint serving Vale packages
+</ParamField>
+
+## How It Works
+
+<Steps>
+  <Step title="Read configuration">
+    Vale locates your `.vale.ini` file and parses the `Packages` list.
+  </Step>
+  
+  <Step title="Download packages">
+    Each package URL is downloaded in sequence with a progress indicator:
+    
+    ```
+    Syncing Microsoft
+    Syncing write-good
+    ✔ Synced 2 package(s) to 'styles'.
+    ```
+  </Step>
+  
+  <Step title="Extract and install">
+    Each `.zip` file is extracted to your `StylesPath` directory. The package name is derived from the filename.
+  </Step>
+  
+  <Step title="Verify installation">
+    After syncing, the styles are immediately available for use in your configuration.
+  </Step>
+</Steps>
+
+## Package Sources
+
+### Official Vale Styles
+
+Vale maintains several official style packages:
+
+<CardGroup cols={2}>
+  <Card title="Microsoft" icon="microsoft">
+    Microsoft Writing Style Guide rules
+    ```
+    https://github.com/errata-ai/Microsoft/releases/latest/download/Microsoft.zip
+    ```
+  </Card>
+  
+  <Card title="Google" icon="google">
+    Google Developer Documentation Style Guide
+    ```
+    https://github.com/errata-ai/Google/releases/latest/download/Google.zip
+    ```
+  </Card>
+  
+  <Card title="write-good" icon="pen">
+    Naive linter for English prose
+    ```
+    https://github.com/errata-ai/write-good/releases/latest/download/write-good.zip
+    ```
+  </Card>
+  
+  <Card title="proselint" icon="book">
+    Linter for prose from Corinne Shuttleworth
+    ```
+    https://github.com/errata-ai/proselint/releases/latest/download/proselint.zip
+    ```
+  </Card>
+</CardGroup>
+
+### Custom Packages
+
+You can host your own Vale packages:
+
+<Steps>
+  <Step title="Create package structure">
+    Organize your style rules in a directory:
+    ```
+    MyStyle/
+    ├── rule1.yml
+    ├── rule2.yml
+    └── vocabularies/
+        ├── accept.txt
+        └── reject.txt
+    ```
+  </Step>
+  
+  <Step title="Create zip file">
+    Compress the directory:
+    ```bash
+    zip -r MyStyle.zip MyStyle/
+    ```
+  </Step>
+  
+  <Step title="Host the package">
+    Upload to GitHub releases, a web server, or any accessible URL.
+  </Step>
+  
+  <Step title="Add to configuration">
+    Reference the URL in your `.vale.ini`:
+    ```ini
+    Packages = https://example.com/MyStyle.zip
+    ```
+  </Step>
+</Steps>
+
+## Examples
+
+<CodeGroup>
+```ini Single package
+StylesPath = styles
+Packages = https://github.com/errata-ai/Microsoft/releases/latest/download/Microsoft.zip
+
+[*]
+BasedOnStyles = Microsoft
+```
+
+```ini Multiple packages
+StylesPath = styles
+Packages = https://github.com/errata-ai/Microsoft/releases/latest/download/Microsoft.zip, \
+           https://github.com/errata-ai/Google/releases/latest/download/Google.zip, \
+           https://github.com/errata-ai/write-good/releases/latest/download/write-good.zip
+
+[*]
+BasedOnStyles = Microsoft, Google, write-good
+```
+
+```ini Custom package URL
+StylesPath = styles
+Packages = https://my-company.com/packages/CompanyStyle.zip
+
+[*]
+BasedOnStyles = CompanyStyle
+```
+
+```ini Mixed sources
+StylesPath = styles
+Packages = https://github.com/errata-ai/Microsoft/releases/latest/download/Microsoft.zip, \
+           https://internal.company.com/vale/InternalStyle.zip
+
+[*]
+BasedOnStyles = Microsoft, InternalStyle
+```
+</CodeGroup>
+
+## Common Workflows
+
+### Initial Setup
+
+When setting up Vale in a new project:
+
+```bash
+# Create .vale.ini with desired packages
+echo "StylesPath = styles
+Packages = https://github.com/errata-ai/Microsoft/releases/latest/download/Microsoft.zip
+
+[*]
+BasedOnStyles = Microsoft" > .vale.ini
+
+# Download packages
+vale sync
+
+# Start linting
+vale .
+```
+
+### CI/CD Integration
+
+In continuous integration pipelines:
+
+```yaml GitHub Actions
+steps:
+  - uses: actions/checkout@v3
+  
+  - name: Install Vale
+    run: |
+      wget https://github.com/errata-ai/vale/releases/latest/download/vale_Linux_64-bit.tar.gz
+      tar -xzf vale_Linux_64-bit.tar.gz
+      sudo mv vale /usr/local/bin/
+  
+  - name: Sync Vale packages
+    run: vale sync
+  
+  - name: Run Vale
+    run: vale .
+```
+
+### Update Packages
+
+To update to the latest package versions:
+
+```bash
+# Remove existing packages
+rm -rf styles/*
+
+# Re-download
+vale sync
+```
+
+<Tip>
+  Using `latest` in GitHub release URLs ensures you always get the most recent package version when running `vale sync`.
+</Tip>
+
+## Troubleshooting
+
+### Package Download Fails
+
+If a package fails to download:
+
+- Verify the URL is accessible in a browser
+- Check network connectivity and firewall rules
+- Ensure you have write permissions to the `StylesPath` directory
+- Try downloading the `.zip` file manually to test
+
+### Package Not Found After Sync
+
+If styles aren't available after syncing:
+
+- Verify the package extracted to the correct directory
+- Check that the style name in `BasedOnStyles` matches the package directory name
+- Run `vale ls-dirs` to confirm your `StylesPath` location
+- Inspect the package contents to ensure it has `.yml` rule files
+
+### Configuration Pipeline
+
+Packages are stored in the `.vale-config` subdirectory of your `StylesPath` as part of Vale's configuration pipeline. This directory is managed automatically and shouldn't be modified manually.
+
+<Warning>
+  Don't commit the `.vale-config` directory to version control. Instead, commit your `.vale.ini` configuration and run `vale sync` to install packages.
+</Warning>
+
+## Directory Structure
+
+After running `sync`, your project structure looks like:
+
+```
+project/
+├── .vale.ini
+└── styles/
+    ├── .vale-config/      # Managed by sync (don't modify)
+    ├── Microsoft/         # Downloaded package
+    │   ├── rule1.yml
+    │   └── rule2.yml
+    └── write-good/        # Downloaded package
+        ├── rule1.yml
+        └── rule2.yml
+```
+
+## Related Commands
+
+- [ls-dirs](/reference/cli/ls-dirs) - View default directories including `StylesPath`
+- [ls-config](/reference/cli/ls-config) - Verify your configuration loaded correctly

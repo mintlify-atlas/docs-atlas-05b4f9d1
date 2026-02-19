@@ -1,0 +1,370 @@
+---
+title: "vale ls-vars"
+description: "Print supported environment variables and their current values."
+---
+
+The `ls-vars` command displays all environment variables that Vale recognizes, along with their descriptions and current values.
+
+## Usage
+
+```bash
+vale ls-vars
+```
+
+By default, the command outputs a formatted table. Use `--output=JSON` for machine-readable output.
+
+## Default Output
+
+The command displays a table with all supported environment variables:
+
+```
+Variable           Description                                                      Value
+VALE_CONFIG_PATH   Override the default search process by specifying a .vale.ini file.  ✗
+VALE_STYLES_PATH   Specify the location of the default StylesPath.                     ✗
+```
+
+<Info>
+  A red X (✗) indicates the variable is not set. If set, the actual value is displayed.
+</Info>
+
+## Supported Variables
+
+<ParamField path="VALE_CONFIG_PATH" type="string">
+  **Override configuration file location**
+  
+  When set, Vale uses this file instead of searching for `.vale.ini` in the current directory and parent directories.
+  
+  ```bash
+  export VALE_CONFIG_PATH=/path/to/.vale.ini
+  vale myfile.md
+  ```
+  
+  This is useful for:
+  - Enforcing a specific configuration across all projects
+  - CI/CD pipelines that need consistent configuration
+  - Testing different configurations without changing project files
+  
+  <Note>
+    The `--config` command-line flag takes precedence over `VALE_CONFIG_PATH`.
+  </Note>
+</ParamField>
+
+<ParamField path="VALE_STYLES_PATH" type="string">
+  **Override default styles directory**
+  
+  Specifies the location where Vale looks for style packages when no project-specific `StylesPath` is configured.
+  
+  ```bash
+  export VALE_STYLES_PATH=/custom/styles
+  vale myfile.md
+  ```
+  
+  This is useful for:
+  - Sharing styles across multiple projects
+  - Centralizing style management in organizations
+  - Using a network-mounted styles directory
+  
+  <Note>
+    The `StylesPath` setting in `.vale.ini` takes precedence over `VALE_STYLES_PATH`.
+  </Note>
+</ParamField>
+
+## JSON Output
+
+For programmatic access, use JSON output:
+
+```bash
+vale --output=JSON ls-vars
+```
+
+Output:
+```json
+{
+  "VALE_CONFIG_PATH": "",
+  "VALE_STYLES_PATH": "/custom/styles/path"
+}
+```
+
+<Info>
+  In JSON output, unset variables have empty string values (`""`).
+</Info>
+
+## Use Cases
+
+### Check Current Settings
+
+Verify which environment variables are affecting Vale's behavior:
+
+```bash
+vale ls-vars
+```
+
+If you see unexpected behavior, check if an environment variable is overriding your configuration.
+
+### CI/CD Configuration
+
+Set environment variables in CI pipelines for consistent behavior:
+
+```yaml GitHub Actions
+env:
+  VALE_STYLES_PATH: ${{ github.workspace }}/.vale-styles
+  VALE_CONFIG_PATH: ${{ github.workspace }}/.vale-ci.ini
+
+steps:
+  - name: Check environment
+    run: vale ls-vars
+  
+  - name: Run Vale
+    run: vale .
+```
+
+### Verify Configuration Source
+
+When debugging configuration issues, check if environment variables are set:
+
+```bash
+vale ls-vars
+vale ls-config | jq '{RootINI, Paths}'
+```
+
+This shows both the environment variable values and the actual configuration Vale loaded.
+
+### Script Configuration
+
+In shell scripts, check and set variables as needed:
+
+```bash
+#!/bin/bash
+
+# Check current settings
+echo "Current Vale environment:"
+vale ls-vars
+
+# Set temporary configuration
+export VALE_CONFIG_PATH="$(pwd)/.vale-strict.ini"
+export VALE_STYLES_PATH="$(pwd)/custom-styles"
+
+echo "\nUpdated Vale environment:"
+vale ls-vars
+
+# Run Vale with custom settings
+vale docs/
+```
+
+## Examples
+
+<CodeGroup>
+```bash View all variables
+vale ls-vars
+```
+
+```bash JSON output
+vale --output=JSON ls-vars
+```
+
+```bash Check specific variable
+vale --output=JSON ls-vars | jq '.VALE_CONFIG_PATH'
+```
+
+```bash With environment set
+export VALE_STYLES_PATH=/custom/styles
+vale ls-vars
+```
+
+```bash Verify settings in script
+if vale --output=JSON ls-vars | jq -e '.VALE_CONFIG_PATH == ""' > /dev/null; then
+  echo "No custom config set"
+fi
+```
+</CodeGroup>
+
+## Setting Environment Variables
+
+<Tabs>
+  <Tab title="Bash/Zsh">
+    **Temporary (current session):**
+    ```bash
+    export VALE_CONFIG_PATH=/path/to/.vale.ini
+    export VALE_STYLES_PATH=/path/to/styles
+    ```
+    
+    **Permanent (add to ~/.bashrc or ~/.zshrc):**
+    ```bash
+    echo 'export VALE_STYLES_PATH="$HOME/.vale/styles"' >> ~/.bashrc
+    source ~/.bashrc
+    ```
+  </Tab>
+  
+  <Tab title="Fish">
+    **Temporary (current session):**
+    ```fish
+    set -x VALE_CONFIG_PATH /path/to/.vale.ini
+    set -x VALE_STYLES_PATH /path/to/styles
+    ```
+    
+    **Permanent:**
+    ```fish
+    set -Ux VALE_STYLES_PATH $HOME/.vale/styles
+    ```
+  </Tab>
+  
+  <Tab title="Windows (PowerShell)">
+    **Temporary (current session):**
+    ```powershell
+    $env:VALE_CONFIG_PATH = "C:\path\to\.vale.ini"
+    $env:VALE_STYLES_PATH = "C:\path\to\styles"
+    ```
+    
+    **Permanent (user environment):**
+    ```powershell
+    [System.Environment]::SetEnvironmentVariable('VALE_STYLES_PATH', 'C:\path\to\styles', 'User')
+    ```
+  </Tab>
+  
+  <Tab title="Windows (CMD)">
+    **Temporary (current session):**
+    ```cmd
+    set VALE_CONFIG_PATH=C:\path\to\.vale.ini
+    set VALE_STYLES_PATH=C:\path\to\styles
+    ```
+    
+    **Permanent:**
+    Use System Properties → Environment Variables GUI
+  </Tab>
+</Tabs>
+
+## Precedence Order
+
+When Vale determines configuration and styles locations, it follows this precedence (highest to lowest):
+
+<Steps>
+  <Step title="Command-line flags">
+    The `--config` flag takes precedence over all other methods:
+    ```bash
+    vale --config=/path/.vale.ini myfile.md
+    ```
+  </Step>
+  
+  <Step title="Environment variables">
+    `VALE_CONFIG_PATH` and `VALE_STYLES_PATH` are checked next:
+    ```bash
+    export VALE_CONFIG_PATH=/path/.vale.ini
+    ```
+  </Step>
+  
+  <Step title="Project configuration">
+    Vale searches for `.vale.ini` in current directory and parents.
+  </Step>
+  
+  <Step title="Global configuration">
+    The global config file from `~/.config/vale/.vale.ini` (or platform equivalent) is used if no project config is found.
+  </Step>
+  
+  <Step title="Default values">
+    Built-in defaults are used as a last resort.
+  </Step>
+</Steps>
+
+## Common Patterns
+
+### Shared Team Configuration
+
+Use environment variables to standardize Vale across a team:
+
+```bash .envrc (direnv)
+export VALE_STYLES_PATH="$PWD/.vale-styles"
+export VALE_CONFIG_PATH="$PWD/.vale.ini"
+```
+
+With [direnv](https://direnv.net/), these variables are automatically set when entering the directory.
+
+### Multiple Configuration Profiles
+
+Switch between different Vale configurations:
+
+```bash
+# Strict checking
+alias vale-strict='VALE_CONFIG_PATH=~/.vale-strict.ini vale'
+
+# Relaxed checking
+alias vale-relaxed='VALE_CONFIG_PATH=~/.vale-relaxed.ini vale'
+
+# Use them
+vale-strict docs/
+vale-relaxed blog/
+```
+
+### Container Environments
+
+Set variables in Docker or container configurations:
+
+```dockerfile Dockerfile
+ENV VALE_STYLES_PATH=/vale/styles
+ENV VALE_CONFIG_PATH=/vale/.vale.ini
+
+COPY styles/ /vale/styles/
+COPY .vale.ini /vale/.vale.ini
+```
+
+### CI/CD Matrix Testing
+
+Test with different configurations in CI:
+
+```yaml GitHub Actions
+strategy:
+  matrix:
+    config:
+      - { name: "strict", path: ".vale-strict.ini" }
+      - { name: "standard", path: ".vale.ini" }
+      - { name: "relaxed", path: ".vale-relaxed.ini" }
+
+steps:
+  - name: Run Vale (${{ matrix.config.name }})
+    env:
+      VALE_CONFIG_PATH: ${{ matrix.config.path }}
+    run: |
+      vale ls-vars
+      vale docs/
+```
+
+## Troubleshooting
+
+### Variable Not Taking Effect
+
+If setting a variable doesn't change Vale's behavior:
+
+1. Verify the variable is actually set:
+   ```bash
+   vale ls-vars
+   ```
+
+2. Check that you exported it (not just set it):
+   ```bash
+   # Wrong (variable not exported)
+   VALE_CONFIG_PATH=/path/to/config
+   
+   # Correct
+   export VALE_CONFIG_PATH=/path/to/config
+   ```
+
+3. Check if command-line flags are overriding it:
+   ```bash
+   vale ls-config | jq '.RootINI'
+   ```
+
+### Finding Active Configuration
+
+To see which configuration Vale actually loaded:
+
+```bash
+vale ls-vars
+vale ls-config | jq '{RootINI, Paths, ConfigFiles}'
+```
+
+This shows both environment variables and the resulting configuration.
+
+## Related Commands
+
+- [ls-dirs](/reference/cli/ls-dirs) - View default directory locations
+- [ls-config](/reference/cli/ls-config) - View loaded configuration
+- [Overview](/reference/cli/overview) - See all command-line flags

@@ -1,0 +1,363 @@
+---
+title: "vale ls-config"
+description: "Print the current Vale configuration in JSON format."
+---
+
+The `ls-config` command outputs your current Vale configuration as formatted JSON, showing all settings after loading and merging configuration files.
+
+## Usage
+
+```bash
+vale ls-config
+```
+
+This command reads your `.vale.ini` file and any configuration pipeline files, then outputs the complete configuration as JSON to stdout.
+
+<Note>
+  This command is useful for debugging configuration issues and understanding how Vale interprets your settings.
+</Note>
+
+## Output Format
+
+The command outputs a JSON object containing all configuration properties:
+
+```json
+{
+  "BlockIgnores": {},
+  "Checks": [
+    "Vale.Spelling",
+    "Vale.Repetition",
+    "Microsoft.Headings"
+  ],
+  "Formats": {},
+  "Asciidoctor": {},
+  "FormatToLang": {},
+  "GBaseStyles": [
+    "Vale",
+    "Microsoft"
+  ],
+  "GChecks": {
+    "Vale.Spelling": true,
+    "Microsoft.Headings": true
+  },
+  "IgnoredClasses": [],
+  "IgnoredScopes": [
+    "code",
+    "tt"
+  ],
+  "MinAlertLevel": 1,
+  "Vocab": [],
+  "RuleToLevel": {},
+  "SBaseStyles": {
+    "*.md": [
+      "Vale",
+      "Microsoft"
+    ]
+  },
+  "SChecks": {},
+  "SkippedScopes": [
+    "script",
+    "style",
+    "pre",
+    "code"
+  ],
+  "Stylesheets": {},
+  "TokenIgnores": {},
+  "CommentDelimiters": {},
+  "WordTemplate": "\\b(?:%s)\\b",
+  "RootINI": "/path/to/project/.vale.ini",
+  "Paths": [
+    "/path/to/project/styles"
+  ],
+  "ConfigFiles": [
+    "/path/to/project/.vale.ini"
+  ],
+  "NLPEndpoint": ""
+}
+```
+
+## Configuration Properties
+
+<ParamField path="MinAlertLevel" type="number">
+  Numeric alert level threshold:
+  - `0` = suggestion
+  - `1` = warning
+  - `2` = error
+</ParamField>
+
+<ParamField path="GBaseStyles" type="array">
+  Global base styles enabled for all files.
+</ParamField>
+
+<ParamField path="SBaseStyles" type="object">
+  Syntax-specific base styles, keyed by file pattern.
+  
+  Example:
+  ```json
+  {
+    "*.md": ["Vale", "Microsoft"],
+    "*.rst": ["Vale", "Google"]
+  }
+  ```
+</ParamField>
+
+<ParamField path="GChecks" type="object">
+  Global check settings, mapping rule names to enabled status.
+  
+  Example:
+  ```json
+  {
+    "Vale.Spelling": true,
+    "Vale.Annotations": false
+  }
+  ```
+</ParamField>
+
+<ParamField path="SChecks" type="object">
+  Syntax-specific check settings, keyed by file pattern.
+</ParamField>
+
+<ParamField path="Checks" type="array">
+  List of all enabled check names.
+</ParamField>
+
+<ParamField path="RootINI" type="string">
+  Absolute path to the root `.vale.ini` configuration file.
+</ParamField>
+
+<ParamField path="Paths" type="array">
+  List of style paths searched for style packages.
+</ParamField>
+
+<ParamField path="ConfigFiles" type="array">
+  All configuration files loaded, in order.
+</ParamField>
+
+<ParamField path="IgnoredScopes" type="array">
+  HTML tags where Vale ignores content completely.
+  
+  Example: `["code", "pre", "tt"]`
+</ParamField>
+
+<ParamField path="SkippedScopes" type="array">
+  HTML tags where Vale skips content but still processes nested elements.
+  
+  Example: `["script", "style", "figure"]`
+</ParamField>
+
+<ParamField path="BlockIgnores" type="object">
+  Block-level ignore patterns by format.
+  
+  Example:
+  ```json
+  {
+    "markdown": ["```.*?```"]
+  }
+  ```
+</ParamField>
+
+<ParamField path="TokenIgnores" type="object">
+  Token-level ignore patterns by format.
+</ParamField>
+
+<ParamField path="Vocab" type="array">
+  Active vocabulary names.
+</ParamField>
+
+<ParamField path="Formats" type="object">
+  Custom format associations mapping file extensions to formats.
+</ParamField>
+
+<ParamField path="RuleToLevel" type="object">
+  Per-rule alert level overrides.
+  
+  Example:
+  ```json
+  {
+    "Vale.Spelling": "error",
+    "Microsoft.Headings": "warning"
+  }
+  ```
+</ParamField>
+
+## Use Cases
+
+### Debugging Configuration
+
+When Vale behaves unexpectedly, check the loaded configuration:
+
+```bash
+vale ls-config | jq '.GBaseStyles'
+```
+
+This shows which styles are actually loaded, helping identify configuration errors.
+
+### Verify Style Loading
+
+Confirm that styles are found and loaded:
+
+```bash
+vale ls-config | jq '.Checks[] | select(startswith("Microsoft"))'
+```
+
+This lists all Microsoft style rules that were loaded.
+
+### Check Paths
+
+Verify configuration file and style paths:
+
+```bash
+vale ls-config | jq '{RootINI, Paths, ConfigFiles}'
+```
+
+Output:
+```json
+{
+  "RootINI": "/home/user/project/.vale.ini",
+  "Paths": [
+    "/home/user/project/styles"
+  ],
+  "ConfigFiles": [
+    "/home/user/project/.vale.ini"
+  ]
+}
+```
+
+### Inspect Scope Configuration
+
+Check which scopes are ignored or skipped:
+
+```bash
+vale ls-config | jq '{IgnoredScopes, SkippedScopes}'
+```
+
+### Verify Rule Overrides
+
+Confirm rule-specific settings:
+
+```bash
+vale ls-config | jq '.RuleToLevel'
+```
+
+## Examples
+
+<CodeGroup>
+```bash View full configuration
+vale ls-config
+```
+
+```bash Check base styles
+vale ls-config | jq '.GBaseStyles'
+```
+
+```bash List all enabled checks
+vale ls-config | jq '.Checks'
+```
+
+```bash View syntax-specific config
+vale ls-config | jq '.SBaseStyles'
+```
+
+```bash Check alert level
+vale ls-config | jq '.MinAlertLevel'
+```
+
+```bash Verify configuration files
+vale ls-config | jq '.ConfigFiles'
+```
+
+```bash Custom config location
+vale --config=/path/to/.vale.ini ls-config
+```
+</CodeGroup>
+
+## Using with jq
+
+Since the output is JSON, you can use `jq` to query specific values:
+
+<Tabs>
+  <Tab title="Filter styles">
+    ```bash
+    vale ls-config | jq '.GBaseStyles[]'
+    ```
+    
+    Output:
+    ```
+    "Vale"
+    "Microsoft"
+    "write-good"
+    ```
+  </Tab>
+  
+  <Tab title="Count enabled rules">
+    ```bash
+    vale ls-config | jq '.Checks | length'
+    ```
+    
+    Output:
+    ```
+    47
+    ```
+  </Tab>
+  
+  <Tab title="Find specific rules">
+    ```bash
+    vale ls-config | jq '.Checks[] | select(contains("Spelling"))'
+    ```
+    
+    Output:
+    ```
+    "Vale.Spelling"
+    "Microsoft.Spelling"
+    ```
+  </Tab>
+  
+  <Tab title="Pretty print paths">
+    ```bash
+    vale ls-config | jq -r '.Paths[]'
+    ```
+    
+    Output:
+    ```
+    /home/user/project/styles
+    /home/user/.local/share/vale/styles
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration Loading Order
+
+Vale loads configuration from multiple sources in this order:
+
+<Steps>
+  <Step title="Default values">
+    Built-in default settings are applied first.
+  </Step>
+  
+  <Step title="Global configuration">
+    The global `.vale.ini` from `~/.config/vale/.vale.ini` (unless `--no-global` is used).
+  </Step>
+  
+  <Step title="Project configuration">
+    Project-specific `.vale.ini` found by searching up the directory tree.
+  </Step>
+  
+  <Step title="Configuration pipeline">
+    Files in `.vale-config/` directory (created by `vale sync`).
+  </Step>
+  
+  <Step title="Command-line flags">
+    CLI flags like `--minAlertLevel` override all other sources.
+  </Step>
+</Steps>
+
+The `ls-config` output shows the final merged configuration after all sources are processed.
+
+<Info>
+  The `ConfigFiles` array in the output shows which configuration files were loaded, in the order they were processed.
+</Info>
+
+## Related Commands
+
+- [ls-dirs](/reference/cli/ls-dirs) - View default directory locations
+- [ls-vars](/reference/cli/ls-vars) - View environment variables affecting configuration

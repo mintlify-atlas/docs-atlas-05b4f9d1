@@ -1,0 +1,218 @@
+---
+title: "CLI Commands Overview"
+description: "Complete reference for Vale's command-line interface commands and options."
+---
+
+Vale provides a powerful command-line interface for linting prose. The CLI includes several commands for different tasks, from linting files to managing configurations.
+
+## Basic Usage
+
+The basic syntax for Vale is:
+
+```bash
+vale [options] [input...]
+```
+
+### Input Methods
+
+Vale accepts input in three ways:
+
+<Tabs>
+  <Tab title="Files and directories">
+    ```bash
+    vale myfile.md myfile2.md mydir/
+    ```
+    Lint one or more files or directories.
+  </Tab>
+  <Tab title="String input">
+    ```bash
+    vale "some text to check"
+    ```
+    Lint text directly as a string argument.
+  </Tab>
+  <Tab title="Standard input">
+    ```bash
+    cat file.md | vale
+    ```
+    Pipe content to Vale via stdin.
+  </Tab>
+</Tabs>
+
+## Available Commands
+
+Vale provides specialized commands for different operations:
+
+<CardGroup cols={2}>
+  <Card title="sync" icon="download" href="/reference/cli/sync">
+    Download and install external configuration sources
+  </Card>
+  <Card title="ls-config" icon="list" href="/reference/cli/ls-config">
+    Print the current configuration to stdout
+  </Card>
+  <Card title="ls-metrics" icon="chart-line" href="/reference/cli/ls-metrics">
+    Print file metrics to stdout
+  </Card>
+  <Card title="ls-dirs" icon="folder-open" href="/reference/cli/ls-dirs">
+    Print default configuration directories
+  </Card>
+  <Card title="ls-vars" icon="code" href="/reference/cli/ls-vars">
+    Print supported environment variables
+  </Card>
+  <Card title="fix" icon="wrench" href="/reference/cli/fix">
+    Attempt to automatically fix alerts
+  </Card>
+</CardGroup>
+
+## Global Options
+
+These options work with any Vale command:
+
+<ParamField path="--config" type="string">
+  Path to a configuration file.
+  
+  ```bash
+  vale --config='path/to/.vale.ini' myfile.md
+  ```
+</ParamField>
+
+<ParamField path="--output" type="string" default="CLI">
+  Output format: `CLI`, `line`, `JSON`, or a template file path.
+  
+  ```bash
+  vale --output=JSON myfile.md
+  ```
+</ParamField>
+
+<ParamField path="--ext" type="string" default=".txt">
+  File extension to associate with stdin input.
+  
+  ```bash
+  echo "text" | vale --ext=.md
+  ```
+</ParamField>
+
+<ParamField path="--path" type="string">
+  File path to associate with stdin for configuration matching.
+  
+  ```bash
+  echo "text" | vale --path=docs/example.md
+  ```
+</ParamField>
+
+<ParamField path="--glob" type="string" default="*">
+  Glob pattern for filtering files.
+  
+  ```bash
+  vale --glob='*.{md,txt}' docs/
+  ```
+</ParamField>
+
+<ParamField path="--minAlertLevel" type="string">
+  Minimum alert level to display: `suggestion`, `warning`, or `error`.
+  
+  ```bash
+  vale --minAlertLevel=error myfile.md
+  ```
+</ParamField>
+
+<ParamField path="--filter" type="string">
+  Expression to filter which rules are applied.
+  
+  ```bash
+  vale --filter='*.Spelling' myfile.md
+  ```
+</ParamField>
+
+<ParamField path="--no-wrap" type="boolean" default="false">
+  Disable text wrapping in CLI output.
+</ParamField>
+
+<ParamField path="--no-exit" type="boolean" default="false">
+  Don't return a nonzero exit code on lint errors.
+</ParamField>
+
+<ParamField path="--ignore-syntax" type="boolean" default="false">
+  Lint all files line-by-line, ignoring markup syntax.
+</ParamField>
+
+<ParamField path="--sort" type="boolean" default="false">
+  Sort files alphabetically in output.
+</ParamField>
+
+<ParamField path="--normalize" type="boolean" default="false">
+  Replace path separators with forward slashes.
+</ParamField>
+
+<ParamField path="--relative" type="boolean" default="false">
+  Return relative file paths in output.
+</ParamField>
+
+<ParamField path="--no-global" type="boolean" default="false">
+  Don't load the global configuration file.
+</ParamField>
+
+<ParamField path="-v, --version" type="boolean">
+  Print Vale's version number.
+  
+  ```bash
+  vale --version
+  ```
+</ParamField>
+
+<ParamField path="-h, --help" type="boolean">
+  Display help information.
+  
+  ```bash
+  vale --help
+  ```
+</ParamField>
+
+## Exit Codes
+
+Vale returns different exit codes based on the linting results:
+
+| Exit Code | Meaning |
+|-----------|----------|
+| `0` | No errors found (or `--no-exit` was used) |
+| `1` | Lint errors found at or above the minimum alert level |
+| `2` | Runtime error occurred (invalid config, file not found, etc.) |
+
+## Examples
+
+<CodeGroup>
+```bash Lint a single file
+vale README.md
+```
+
+```bash Lint multiple files
+vale docs/intro.md docs/guide.md
+```
+
+```bash Lint a directory
+vale docs/
+```
+
+```bash Lint with specific glob pattern
+vale --glob='*.{md,mdx,txt}' docs/
+```
+
+```bash Output as JSON
+vale --output=JSON myfile.md
+```
+
+```bash Show only errors
+vale --minAlertLevel=error myfile.md
+```
+
+```bash Use custom config
+vale --config=.vale-custom.ini myfile.md
+```
+
+```bash Lint stdin with extension
+echo "text to check" | vale --ext=.md
+```
+</CodeGroup>
+
+<Note>
+  If you run `vale` without arguments and no stdin input, Vale displays introductory help information.
+</Note>

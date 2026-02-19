@@ -1,0 +1,611 @@
+---
+title: Editor Integration
+description: Integrate Vale into your editor for real-time prose linting
+---
+
+Vale integrates with popular text editors through plugins and native messaging. This guide covers setup for major editors and the native messaging host architecture.
+
+## Native Messaging Architecture
+
+Vale uses a native messaging host to enable browser extension integration. This same architecture can be adapted for editor plugins.
+
+### How Native Messaging Works
+
+From `cmd/vale/native.go:19-28`:
+
+```go
+const nativeHostName = "sh.vale.native"
+
+var supportedBrowsers = []string{
+    "chrome",
+    "firefox",
+    "opera",
+    "chromium",
+    "edge",
+}
+```
+
+The native messaging host:
+1. Receives JSON messages via stdin
+2. Processes content with Vale
+3. Returns results via stdout
+4. Uses a manifest file for browser/editor registration
+
+<Info>
+  The native host bridges Vale (a command-line tool) with GUI applications that need real-time linting.
+</Info>
+
+## Installing the Native Host
+
+Vale provides built-in commands to install the native messaging host.
+
+<Steps>
+  <Step title="Install for your browser">
+    Run the install command:
+    
+    ```bash
+    vale host-install chrome
+    ```
+    
+    Supported browsers: `chrome`, `firefox`, `opera`, `chromium`, `edge`
+  </Step>
+  
+  <Step title="Verify installation">
+    Check the installation:
+    
+    ```bash
+    vale ls-dirs
+    ```
+    
+    Output shows:
+    ```
+    ┌────────────┬───────────────────────────────────────────┬───┐
+    │ Asset      │ Default Location                          │ ✓ │
+    ├────────────┼───────────────────────────────────────────┼───┤
+    │ StylesPath │ /Users/user/.config/vale/styles           │ ✓ │
+    │ .vale.ini  │ /Users/user/.vale.ini                     │ ✓ │
+    │ vale-native│ /Users/user/.config/vale/native/vale-native│ ✓ │
+    └────────────┴───────────────────────────────────────────┴───┘
+    ```
+  </Step>
+  
+  <Step title="Configuration location">
+    The native host config is stored at:
+    
+    - **Linux**: `~/.config/vale/native/config.json`
+    - **macOS**: `~/Library/Application Support/vale/native/config.json`
+    - **Windows**: `%APPDATA%\vale\native\config.json`
+    
+    From `cmd/vale/native.go:58-87`, Vale creates a config file that points to the Vale binary.
+  </Step>
+</Steps>
+
+### Manifest File Structure
+
+The native host uses a manifest file for registration:
+
+```json
+{
+  "name": "sh.vale.native",
+  "description": "A native messaging host for the Vale CLI.",
+  "path": "/usr/local/bin/vale-native",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://kfmjcegeklidlnjoechfggipjjjahedj/"
+  ]
+}
+```
+
+From `cmd/vale/native.go:40-47`, the manifest specifies:
+- **name**: Unique host identifier
+- **path**: Path to the native host executable
+- **type**: Communication protocol (always `stdio`)
+- **allowed_origins** (Chrome) or **allowed_extensions** (Firefox): Extension IDs
+
+## VS Code Integration
+
+Integrate Vale into Visual Studio Code using the official extension.
+
+<Steps>
+  <Step title="Install the extension">
+    Install the Vale VS Code extension:
+    
+    ```bash
+    code --install-extension errata-ai.vale-server
+    ```
+    
+    Or search for "Vale" in the Extensions marketplace.
+  </Step>
+  
+  <Step title="Configure workspace settings">
+    Add to `.vscode/settings.json`:
+    
+    ```json .vscode/settings.json
+    {
+      "vale.valeCLI.config": ".vale.ini",
+      "vale.valeCLI.path": "/usr/local/bin/vale",
+      "vale.valeCLI.minAlertLevel": "suggestion"
+    }
+    ```
+  </Step>
+  
+  <Step title="Create Vale configuration">
+    Ensure `.vale.ini` exists in your workspace:
+    
+    ```ini .vale.ini
+    StylesPath = styles
+    MinAlertLevel = suggestion
+    
+    Packages = Microsoft, write-good
+    
+    [*.md]
+    BasedOnStyles = Vale, Microsoft
+    ```
+  </Step>
+  
+  <Step title="Verify integration">
+    Open a Markdown file and check the Problems panel for Vale alerts.
+  </Step>
+</Steps>
+
+### VS Code Settings
+
+Available settings:
+
+```json
+{
+  // Path to Vale binary
+  "vale.valeCLI.path": "/usr/local/bin/vale",
+  
+  // Path to .vale.ini
+  "vale.valeCLI.config": ".vale.ini",
+  
+  // Minimum alert level
+  "vale.valeCLI.minAlertLevel": "warning",
+  
+  // Enable/disable Vale
+  "vale.enabled": true,
+  
+  // File patterns to lint
+  "vale.lintContext": "file"
+}
+```
+
+## Vim/Neovim Integration
+
+Integrate Vale into Vim using ALE (Asynchronous Lint Engine).
+
+<Steps>
+  <Step title="Install ALE">
+    Using vim-plug:
+    
+    ```vim .vimrc
+    Plug 'dense-analysis/ale'
+    ```
+  </Step>
+  
+  <Step title="Configure ALE for Vale">
+    Add to `.vimrc` or `init.vim`:
+    
+    ```vim .vimrc
+    " Enable Vale linter
+    let g:ale_linters = {
+    \   'markdown': ['vale'],
+    \   'text': ['vale'],
+    \}
+    
+    " Vale configuration
+    let g:ale_vale_executable = '/usr/local/bin/vale'
+    let g:ale_vale_options = '--config=.vale.ini'
+    
+    " Only lint on save
+    let g:ale_lint_on_text_changed = 'never'
+    let g:ale_lint_on_insert_leave = 0
+    let g:ale_lint_on_save = 1
+    ```
+  </Step>
+  
+  <Step title="Alternative: Using COC">
+    For coc.nvim users:
+    
+    ```json coc-settings.json
+    {
+      "diagnostic-languageserver.filetypes": {
+        "markdown": "vale",
+        "text": "vale"
+      },
+      "diagnostic-languageserver.linters": {
+        "vale": {
+          "command": "vale",
+          "args": ["--output=line", "%file"],
+          "parseCommand": {
+            "line": "^%f:%l:%c:%*[^:]:(.*)$"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+### Vim Commands
+
+Useful ALE commands for Vale:
+
+```vim
+" Jump to next/previous error
+:ALENext
+:ALEPrevious
+
+" Show detail for current error
+:ALEDetail
+
+" Fix current issue (if action available)
+:ALEFix
+
+" Toggle linting
+:ALEToggle
+```
+
+## Emacs Integration
+
+Integrate Vale into Emacs using Flycheck.
+
+<Steps>
+  <Step title="Install Flycheck">
+    Add to `init.el`:
+    
+    ```elisp init.el
+    (use-package flycheck
+      :ensure t
+      :init (global-flycheck-mode))
+    ```
+  </Step>
+  
+  <Step title="Configure Vale checker">
+    Add Vale to Flycheck:
+    
+    ```elisp init.el
+    (flycheck-define-checker vale
+      "A prose linter using Vale."
+      :command ("vale" "--output=line" source)
+      :standard-input nil
+      :error-patterns
+      ((error line-start (file-name) ":" line ":" column ":" (id (one-or-more (not (any ":"))))
+              ":" (message) line-end))
+      :modes (markdown-mode text-mode org-mode))
+    
+    (add-to-list 'flycheck-checkers 'vale)
+    ```
+  </Step>
+  
+  <Step title="Enable for modes">
+    Enable Flycheck for relevant modes:
+    
+    ```elisp init.el
+    (add-hook 'markdown-mode-hook 'flycheck-mode)
+    (add-hook 'text-mode-hook 'flycheck-mode)
+    (add-hook 'org-mode-hook 'flycheck-mode)
+    ```
+  </Step>
+</Steps>
+
+## Sublime Text Integration
+
+Integrate Vale into Sublime Text using SublimeLinter.
+
+<Steps>
+  <Step title="Install Package Control">
+    If not already installed, install Package Control:
+    
+    Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (macOS), then:
+    ```
+    Install Package Control
+    ```
+  </Step>
+  
+  <Step title="Install SublimeLinter">
+    Install SublimeLinter and the Vale plugin:
+    
+    1. `Ctrl+Shift+P` → "Package Control: Install Package"
+    2. Search for "SublimeLinter"
+    3. Search for "SublimeLinter-vale"
+  </Step>
+  
+  <Step title="Configure settings">
+    Open Preferences → Package Settings → SublimeLinter → Settings:
+    
+    ```json
+    {
+      "linters": {
+        "vale": {
+          "executable": "/usr/local/bin/vale",
+          "args": ["--config", ".vale.ini", "--output", "line"]
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Browser Extensions
+
+Vale's native messaging host enables browser extension integration.
+
+### Chrome/Edge Extension
+
+<Steps>
+  <Step title="Install the native host">
+    ```bash
+    vale host-install chrome
+    ```
+    
+    For Edge:
+    ```bash
+    vale host-install edge
+    ```
+  </Step>
+  
+  <Step title="Install the browser extension">
+    Visit the Chrome Web Store and search for "Vale" (extension ID: `kfmjcegeklidlnjoechfggipjjjahedj`).
+  </Step>
+  
+  <Step title="Configure the extension">
+    The extension communicates with Vale through the native messaging host, using your local `.vale.ini` configuration.
+  </Step>
+</Steps>
+
+### Firefox Extension
+
+<Steps>
+  <Step title="Install the native host">
+    ```bash
+    vale host-install firefox
+    ```
+  </Step>
+  
+  <Step title="Verify manifest location">
+    On Linux/macOS:
+    ```bash
+    ls ~/.mozilla/native-messaging-hosts/sh.vale.native.json
+    ```
+  </Step>
+  
+  <Step title="Install the Firefox add-on">
+    Visit the Firefox Add-ons site and search for "Vale".
+  </Step>
+</Steps>
+
+<Warning>
+  Browser extensions require the native messaging host to be installed first. The extension cannot function without it.
+</Warning>
+
+## Language Server Protocol (LSP)
+
+For editors that support LSP, you can use Vale through a language server.
+
+### Generic LSP Setup
+
+Many editors support LSP (VS Code, Vim/Neovim with coc.nvim, Emacs with lsp-mode). Configure Vale as an LSP server:
+
+```json
+{
+  "vale": {
+    "command": "vale-ls",
+    "filetypes": ["markdown", "text", "mdx"],
+    "rootPatterns": [".vale.ini"]
+  }
+}
+```
+
+<Note>
+  Vale's LSP implementation is provided by third-party language servers like `vale-ls`. Check the Vale documentation for current LSP options.
+</Note>
+
+## Custom Integration
+
+Build custom integrations using Vale's programmatic interfaces.
+
+### Using JSON Output
+
+Parse Vale's JSON output in any language:
+
+```python vale_integration.py
+import subprocess
+import json
+
+def lint_with_vale(file_path):
+    result = subprocess.run(
+        ['vale', '--output=JSON', file_path],
+        capture_output=True,
+        text=True
+    )
+    
+    if result.returncode == 2:
+        # Configuration error
+        raise Exception(f"Vale error: {result.stderr}")
+    
+    alerts = json.loads(result.stdout)
+    return alerts
+
+# Use in your editor plugin
+alerts = lint_with_vale('document.md')
+for file_path, file_alerts in alerts.items():
+    for alert in file_alerts:
+        print(f"{file_path}:{alert['Line']}:{alert['Column']} - {alert['Message']}")
+```
+
+### Building a Language Server
+
+Implement a Vale language server:
+
+```python vale_server.py
+from pygls.server import LanguageServer
+from lsprotocol import types
+import subprocess
+import json
+
+server = LanguageServer('vale-ls', 'v1')
+
+@server.feature(types.TEXT_DOCUMENT_DID_SAVE)
+async def did_save(ls, params):
+    """Lint document on save."""
+    doc_uri = params.text_document.uri
+    doc_path = doc_uri.replace('file://', '')
+    
+    # Run Vale
+    result = subprocess.run(
+        ['vale', '--output=JSON', doc_path],
+        capture_output=True,
+        text=True
+    )
+    
+    if result.returncode == 2:
+        return
+    
+    alerts = json.loads(result.stdout)
+    diagnostics = []
+    
+    for alert in alerts.get(doc_path, []):
+        diagnostics.append(types.Diagnostic(
+            range=types.Range(
+                start=types.Position(alert['Line'] - 1, alert['Span'][0]),
+                end=types.Position(alert['Line'] - 1, alert['Span'][1])
+            ),
+            message=alert['Message'],
+            severity=severity_map[alert['Severity']],
+            source='vale'
+        ))
+    
+    ls.publish_diagnostics(doc_uri, diagnostics)
+
+if __name__ == '__main__':
+    server.start_io()
+```
+
+## Uninstalling the Native Host
+
+Remove the native messaging host:
+
+```bash
+vale host-uninstall chrome
+```
+
+From `cmd/vale/native.go:345-395`, this removes:
+- The native host binary
+- The configuration file
+- The manifest file
+- Registry entries (Windows only)
+
+## Troubleshooting
+
+### Native Host Not Found
+
+If the browser extension can't find the native host:
+
+```bash
+# Check installation
+vale ls-dirs
+
+# Reinstall the host
+vale host-uninstall chrome
+vale host-install chrome
+
+# Check the config file
+cat ~/.config/vale/native/config.json
+```
+
+The config file should contain:
+```json
+{
+  "path": "/usr/local/bin/vale"
+}
+```
+
+### Extension Permission Errors
+
+On Linux/macOS, ensure the native host is executable:
+
+```bash
+chmod +x ~/.config/vale/native/vale-native
+```
+
+### Vale Not Found in Editor
+
+Ensure Vale is in your PATH:
+
+```bash
+which vale
+# Should output: /usr/local/bin/vale
+```
+
+If not found, add to your shell profile:
+
+```bash .bashrc
+export PATH="$PATH:/usr/local/bin"
+```
+
+### Configuration Not Loading
+
+Check that your editor can find `.vale.ini`:
+
+```bash
+# Test from project directory
+cd /path/to/project
+vale ls-config
+```
+
+Specify the config explicitly in editor settings:
+
+```json
+{
+  "vale.valeCLI.config": "${workspaceFolder}/.vale.ini"
+}
+```
+
+## Performance Optimization
+
+For large documents, optimize Vale's performance:
+
+### Limit Alert Level
+
+```ini .vale.ini
+MinAlertLevel = warning
+```
+
+### Scope Rules Appropriately
+
+Use specific scopes to reduce processing:
+
+```yaml
+extends: existence
+message: "Use '%s' instead"
+scope: paragraph.text  # Skip headings, lists, etc.
+tokens:
+  - utilize
+```
+
+### Cache Results
+
+For editor plugins, cache Vale results and only re-run on file changes.
+
+## Best Practices
+
+1. **Use the native host**: For browser and GUI integrations
+2. **Parse JSON output**: For custom integrations
+3. **Lint on save**: Avoid linting on every keystroke
+4. **Configure per-project**: Use workspace settings
+5. **Handle errors gracefully**: Check exit code 2 for configuration issues
+6. **Respect user settings**: Allow users to disable/configure Vale
+7. **Provide feedback**: Show Vale's status in the editor UI
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CI Integration" icon="gears" href="/guides/ci-integration">
+    Integrate Vale into your CI/CD pipeline
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/reference/cli/overview">
+    Explore Vale's command-line interface
+  </Card>
+</CardGroup>

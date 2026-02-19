@@ -1,0 +1,351 @@
+---
+title: 'Line Output'
+description: 'Simple line-based output format compatible with compiler-style error reporting'
+icon: 'list'
+---
+
+## Overview
+
+The line output format provides a simple, grep-friendly output style where each alert is printed on a single line. This format is compatible with many text editors and IDE error parsers that expect compiler-style error messages.
+
+<Info>
+The line format is ideal for integration with editors like Vim, Emacs, and tools that expect traditional compiler error output.
+</Info>
+
+## Usage
+
+Enable line output with the `--output` flag:
+
+```bash
+vale --output=line document.md
+```
+
+<Note>
+The format name is case-sensitive. Use lowercase `line`.
+</Note>
+
+## Output Format
+
+Each alert is printed on a single line with the following structure:
+
+```
+path:line:column:check:message
+```
+
+<ResponseField name="path" type="string" required>
+  The file path where the issue was found. May be absolute or relative depending on configuration.
+</ResponseField>
+
+<ResponseField name="line" type="integer" required>
+  The line number where the issue was found (1-indexed).
+</ResponseField>
+
+<ResponseField name="column" type="integer" required>
+  The column number where the match begins (0-indexed). This corresponds to `Span[0]` in the Alert structure.
+</ResponseField>
+
+<ResponseField name="check" type="string" required>
+  The name of the rule that generated this alert (e.g., "Vale.Spelling", "Google.Acronyms").
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  The alert message describing the issue.
+</ResponseField>
+
+## Example Output
+
+Here are real examples of what the line output looks like:
+
+<CodeGroup>
+
+```txt Basic Example
+/path/to/document.md:12:5:Vale.Spelling:Did you really mean 'teh'?
+/path/to/document.md:15:34:Vale.ReadabilityGrade:Grade level (12.3) too high!
+/path/to/document.md:23:8:Google.Acronyms:Spell out 'HTTP' on first use.
+/another/file.md:8:15:Microsoft.Terms:Use 'and' instead of '&'.
+```
+
+```txt Multiple Files
+README.md:1:0:Google.Headings:'README' should use sentence-style capitalization.
+README.md:5:0:Vale.Spelling:Did you really mean 'installtion'?
+docs/guide.md:10:23:Microsoft.Passive:Consider using active voice.
+docs/guide.md:15:5:Vale.ReadabilityGrade:Grade level (14.2) too high!
+```
+
+```txt Relative Paths
+testdata/test.md:21:14:Vale.Terms:Use 'and' instead of 'as well as'.
+```
+
+</CodeGroup>
+
+<Tip>
+The line format uses no colors or special formatting, making it perfect for piping to other tools or parsing with scripts.
+</Tip>
+
+## Path Handling
+
+By default, Vale outputs the full absolute path for each file. The path format can be controlled with the `--relative` flag.
+
+### Absolute Paths (Default)
+
+```bash
+vale --output=line document.md
+```
+
+```txt
+/home/user/projects/docs/document.md:12:5:Vale.Spelling:Did you really mean 'teh'?
+```
+
+### Relative Paths
+
+```bash
+vale --output=line --relative document.md
+```
+
+```txt
+docs/document.md:12:5:Vale.Spelling:Did you really mean 'teh'?
+```
+
+<Warning>
+The `--relative` flag behavior has known limitations and is considered experimental. It attempts to create relative paths based on the executable directory.
+</Warning>
+
+## Implementation Details
+
+The line output is implemented in `cmd/vale/line.go:13-41`:
+
+<CodeGroup>
+
+```go Line Output Function
+func PrintLineAlerts(linted []*core.File, relative bool) bool {
+    var base string
+    exeDir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
+    
+    alertCount := 0
+    for _, f := range linted {
+        // Handle relative paths if requested
+        if relative && strings.Contains(f.Path, exeDir) {
+            base = strings.Split(f.Path, exeDir)[1]
+        } else {
+            base = f.Path
+        }
+        
+        for _, a := range f.SortedAlerts() {
+            if a.Severity == "error" {
+                alertCount++
+            }
+            fmt.Printf("%s:%d:%d:%s:%s\n",
+                base, a.Line, a.Span[0], a.Check, a.Message)
+        }
+    }
+    return alertCount != 0
+}
+```
+
+```go Alert Structure
+type Alert struct {
+    Check    string   // rule name
+    Message  string   // alert message
+    Severity string   // 'suggestion', 'warning', or 'error'
+    Line     int      // line number (1-indexed)
+    Span     []int    // [begin, end] column positions
+    Match    string   // the matched text
+    // ... other fields
+}
+```
+
+</CodeGroup>
+
+<Info>
+Alerts are automatically sorted by position (line, then column) before being printed, ensuring consistent output order.
+</Info>
+
+## Exit Code Behavior
+
+The line output format follows Vale's standard exit code behavior:
+
+- **Exit 0**: No errors found (warnings and suggestions are OK)
+- **Exit 1**: One or more errors found
+
+```bash
+vale --output=line document.md
+if [ $? -eq 0 ]; then
+    echo "No errors found"
+else
+    echo "Errors detected"
+fi
+```
+
+## Editor Integration
+
+Many text editors can parse the line format automatically:
+
+### Vim
+
+Set Vale as the compiler for your filetype:
+
+```vim
+:set makeprg=vale\ --output=line\ %
+:set errorformat=%f:%l:%c:%m
+```
+
+Then use `:make` to run Vale and populate the quickfix list.
+
+### Emacs
+
+Use compilation mode with Vale:
+
+```elisp
+(compilation-start "vale --output=line *.md")
+```
+
+Emacs will automatically parse the output and allow jumping to errors.
+
+### VS Code
+
+Configure a problem matcher in `.vscode/tasks.json`:
+
+```json
+{
+  "problemMatcher": {
+    "owner": "vale",
+    "fileLocation": ["absolute"],
+    "pattern": {
+      "regexp": "^(.*):(\\d+):(\\d+):(.*):(.*)",
+      "file": 1,
+      "line": 2,
+      "column": 3,
+      "code": 4,
+      "message": 5
+    }
+  }
+}
+```
+
+<Tip>
+The line format's simplicity makes it easy to write custom parsers and integrations.
+</Tip>
+
+## Parsing Examples
+
+### Using awk
+
+Extract only error lines from a specific file:
+
+```bash
+vale --output=line *.md | awk -F: '$4 == "Vale.Spelling" {print $5}'
+```
+
+### Using grep
+
+Filter alerts by severity (requires additional metadata):
+
+```bash
+vale --output=line *.md | grep "Vale.Spelling"
+```
+
+### Using Python
+
+Parse line output programmatically:
+
+```python
+import subprocess
+
+result = subprocess.run(
+    ['vale', '--output=line', 'document.md'],
+    capture_output=True,
+    text=True
+)
+
+for line in result.stdout.strip().split('\n'):
+    if not line:
+        continue
+    parts = line.split(':', 4)
+    if len(parts) == 5:
+        path, line_num, col, check, message = parts
+        print(f"File: {path}, Line: {line_num}, Issue: {message}")
+```
+
+<Note>
+When parsing line output, remember that the message field (the last colon-separated component) may itself contain colons.
+</Note>
+
+## Limitations
+
+The line format has some inherent limitations compared to JSON output:
+
+<Warning>
+**Missing Information**: The line format doesn't include:
+- Severity level (error/warning/suggestion)
+- Match text
+- Action hints
+- Description or Link fields
+- Span end position
+</Warning>
+
+If you need this information, consider using JSON output instead:
+
+```bash
+vale --output=JSON document.md
+```
+
+## Comparison with Other Formats
+
+| Feature | Line | CLI | JSON |
+|---------|------|-----|------|
+| Single line per alert | ✅ | ❌ | ❌ |
+| Easy to parse | ✅ | ❌ | ✅ |
+| Editor integration | ✅ | ❌ | ⚠️ |
+| Includes severity | ❌ | ✅ | ✅ |
+| Includes colors | ❌ | ✅ | ❌ |
+| Shows full metadata | ❌ | ⚠️ | ✅ |
+| grep-friendly | ✅ | ❌ | ❌ |
+
+## Common Use Cases
+
+### Continuous Integration
+
+Simple error detection in CI:
+
+```bash GitHub Actions
+- name: Run Vale
+  run: |
+    vale --output=line docs/ > vale.txt
+    if [ $? -ne 0 ]; then
+      cat vale.txt
+      exit 1
+    fi
+```
+
+### Pre-commit Hooks
+
+Check staged files:
+
+```bash
+#!/bin/bash
+files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.md$')
+if [ -n "$files" ]; then
+    vale --output=line $files
+fi
+```
+
+### Automated Reports
+
+Generate simple text reports:
+
+```bash
+vale --output=line docs/ | tee vale-report.txt
+echo "Total issues: $(wc -l < vale-report.txt)"
+```
+
+<Tip>
+Combine with `grep`, `awk`, or `sed` for quick filtering and analysis of results.
+</Tip>
+
+## Related Options
+
+- Use `--output=CLI` for human-readable, color-coded output
+- Use `--output=JSON` for complete structured data
+- Use `--relative` to output relative paths (experimental)
+- Use `--sort` to ensure consistent file ordering
+- Use custom templates for complete control over output format

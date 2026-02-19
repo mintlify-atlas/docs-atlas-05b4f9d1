@@ -1,0 +1,167 @@
+---
+title: Repetition
+description: Detect repeated consecutive words
+---
+
+The `repetition` rule type identifies repeated consecutive occurrences of tokens. This helps catch common writing mistakes like "the the" while being smart about sentence boundaries.
+
+## How It Works
+
+The `repetition` rule searches for consecutive matches of specified patterns. It tracks matches and triggers an alert when the same token appears multiple times in a row, exceeding the specified threshold.
+
+## Parameters
+
+<ParamField path="tokens" type="array" required>
+  An array of regex patterns to match. The rule will look for consecutive occurrences of matches.
+</ParamField>
+
+<ParamField path="max" type="integer" default="0">
+  The maximum number of consecutive repetitions allowed. A value of `0` means any repetition triggers an alert.
+</ParamField>
+
+<ParamField path="ignorecase" type="boolean" default="false">
+  Makes pattern matching case-insensitive when set to `true`.
+</ParamField>
+
+<ParamField path="alpha" type="boolean" default="false">
+  When `true`, only matches that consist of letters trigger alerts. This filters out repeated punctuation or numbers.
+</ParamField>
+
+<ParamField path="exceptions" type="array">
+  An array of strings or patterns that should not trigger alerts even if repeated.
+</ParamField>
+
+<ParamField path="vocab" type="boolean" default="true">
+  If `true`, Vale will use your vocabulary files as additional exceptions.
+</ParamField>
+
+## Examples
+
+### Basic Word Repetition
+
+Catch any repeated word:
+
+```yaml
+extends: repetition
+message: "'%s' is repeated!"
+level: warning
+ignorecase: true
+tokens:
+  - '[\w]+'
+```
+
+This will catch errors like:
+- "the the document"
+- "This This is wrong"
+
+### Allowing Some Repetition
+
+Allow deliberate repetition (e.g., "very very important"):
+
+```yaml
+extends: repetition
+message: "More than 2 repetitions of '%s'."
+level: error
+max: 1
+ignorecase: true
+tokens:
+  - '\b\w+\b'
+```
+
+### Alphabetic Only
+
+Only flag repeated words, not punctuation or numbers:
+
+```yaml
+extends: repetition
+message: "'%s' is repeated!"
+level: warning
+ignorecase: true
+alpha: true
+tokens:
+  - '.+'
+```
+
+### With Exceptions
+
+Allow specific repeated words (like "had had" in past perfect):
+
+```yaml
+extends: repetition
+message: "'%s' is repeated!"
+level: warning
+ignorecase: true
+tokens:
+  - '\b\w+\b'
+exceptions:
+  - had
+  - that
+  - can
+```
+
+### Case-Sensitive Repetition
+
+Only flag exact case matches:
+
+```yaml
+extends: repetition
+message: "'%s' is repeated!"
+level: error
+ignorecase: false
+tokens:
+  - '\b[A-Z]\w+\b'
+```
+
+This catches "Python Python" but not "Python python".
+
+## Use Cases
+
+<Info>
+The `repetition` rule is ideal for:
+- Catching accidental word duplication during editing
+- Identifying copy-paste errors
+- Enforcing clarity by preventing stuttered text
+- Quality control for technical documentation
+</Info>
+
+## Sentence Boundary Detection
+
+<Note>
+The `repetition` rule is smart about sentence boundaries. It only flags repetitions within the same sentence, avoiding false positives like:
+
+"Redis is fast. Redis can handle millions of requests."
+
+If the repeated words span multiple sentences (detected by `nlp.SentenceTokenizer`), no alert is triggered.
+</Note>
+
+## Technical Details
+
+Internally, the `repetition` rule (internal/check/repetition.go:61-125):
+
+1. Compiles all tokens into a single regex pattern with alternation
+2. Finds all matches in the text using `FindAllStringIndex`
+3. Compares each match with the previous match
+4. Increments a counter when consecutive matches are identical
+5. When count exceeds `max`, checks if the span crosses sentence boundaries
+6. If within a single sentence, creates an alert for the full repeated span
+
+The comparison logic respects the `ignorecase` setting:
+```go
+if o.Ignorecase {
+    hit = strings.EqualFold(curr, prev) && curr != ""
+} else {
+    hit = curr == prev && curr != ""
+}
+```
+
+The `alpha` parameter filters matches through `core.IsLetter()` to ensure only alphabetic strings trigger alerts.
+
+## Alert Span
+
+When a repetition is detected, the alert spans from the start of the first occurrence to the end of the last occurrence, making it easy to see the full repeated phrase.
+
+## Related Rule Types
+
+- **existence**: Use when you want to detect any occurrence, not just repetitions
+- **occurrence**: Use when you want to count total occurrences, not consecutive ones
+- **sequence**: Use when you need to match specific patterns of tokens in sequence

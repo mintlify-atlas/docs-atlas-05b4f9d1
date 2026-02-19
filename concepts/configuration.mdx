@@ -1,0 +1,490 @@
+---
+title: "Configuration"
+description: "Configure Vale behavior with .vale.ini files and understand the configuration hierarchy"
+---
+
+Vale uses INI-style configuration files to control its behavior. The primary configuration file is `.vale.ini` (or `.vale` for compatibility).
+
+## Configuration file location
+
+Vale searches for configuration files in this order:
+
+1. A file specified via `--config` flag
+2. A file specified via `VALE_CONFIG_PATH` environment variable
+3. `.vale.ini` in the current directory, then parent directories
+4. The global config at `~/.config/vale/.vale.ini` (Linux/macOS) or `%USERPROFILE%\.vale.ini` (Windows)
+
+The search stops at the first configuration file found.
+
+<Info>
+  Run `vale ls-config` to see which configuration file Vale is using and view its merged settings.
+</Info>
+
+## Basic structure
+
+A configuration file has two sections:
+
+1. **Core options** (before any format sections)
+2. **Format sections** (within `[pattern]` blocks)
+
+```ini
+# Core options
+StylesPath = styles
+MinAlertLevel = suggestion
+Vocab = MyProject
+
+# Format section
+[*.md]
+BasedOnStyles = Vale, Google
+```
+
+## Core options
+
+Core options must appear before any format sections (`[...]`).
+
+<Accordion title="StylesPath">
+  **Type:** String  
+  **Default:** None  
+  **Required:** Yes (unless using Vale Server)
+
+  The directory where Vale looks for styles. Can be absolute or relative to the configuration file.
+
+  ```ini
+  StylesPath = styles
+  ```
+
+  You can specify multiple styles paths:
+  
+  ```ini
+  StylesPath = /path/to/global/styles
+  
+  # In a second config file that inherits the first
+  StylesPath = ./local-styles
+  ```
+
+  Vale merges styles from all paths, with later paths taking precedence.
+
+  From `internal/core/config.go:163-200`:
+  ```go
+  "StylesPath": func(sec *ini.Section, cfg *Config) error {
+      paths := sec.Key("StylesPath").ValueWithShadows()
+      // Process paths based on local vs global config
+      candidate := filepath.FromSlash(paths[len(paths)-1])
+      path := system.DeterminePath(cfg.ConfigFile(), candidate)
+      cfg.AddStylesPath(path)
+      return nil
+  },
+  ```
+</Accordion>
+
+<Accordion title="MinAlertLevel">
+  **Type:** String  
+  **Values:** `suggestion`, `warning`, `error`  
+  **Default:** `warning`
+
+  The minimum alert level to display. Vale suppresses alerts below this level.
+
+  ```ini
+  MinAlertLevel = error
+  ```
+
+  - `suggestion`: Show all alerts
+  - `warning`: Hide suggestions
+  - `error`: Only show errors
+
+  You can override this with the `--minAlertLevel` CLI flag.
+</Accordion>
+
+<Accordion title="Vocab">
+  **Type:** String or Array  
+  **Default:** None
+
+  The active vocabulary (or vocabularies) for the project. See [Vocabularies](/concepts/vocabularies).
+
+  ```ini
+  # Single vocabulary
+  Vocab = MyProject
+
+  # Multiple vocabularies
+  Vocab = Base, API
+  ```
+
+  Vale looks for vocabulary directories at `config/vocabularies/{name}/` relative to your `StylesPath`.
+</Accordion>
+
+<Accordion title="Packages">
+  **Type:** Array  
+  **Default:** None
+
+  Third-party Vale packages to install.
+
+  ```ini
+  Packages = https://github.com/errata-ai/Microsoft/releases/latest/download/Microsoft.zip
+  ```
+
+  Run `vale sync` to download and install packages.
+</Accordion>
+
+<Accordion title="DictionaryPath" (Deprecated)>
+  <Warning>
+    Deprecated in v3. Use `Vocab` with vocabulary files instead.
+  </Warning>
+
+  Previously specified the path to dictionary files. Now handled automatically through vocabularies.
+</Accordion>
+
+<Accordion title="NLPEndpoint">
+  **Type:** String  
+  **Default:** None
+
+  URL to an external NLP service for part-of-speech tagging (used by `sequence` rules).
+
+  ```ini
+  NLPEndpoint = http://localhost:5000
+  ```
+</Accordion>
+
+## Format sections
+
+Format sections use glob patterns to target specific files:
+
+```ini
+[*.md]
+BasedOnStyles = Vale, Google
+
+[*.{rst,txt}]
+BasedOnStyles = Vale, Microsoft
+
+[docs/*.md]
+BasedOnStyles = Vale
+```
+
+<Tabs>
+  <Tab title="BasedOnStyles">
+    **Type:** Array  
+    **Required:** Yes (per format section)
+
+    The styles to apply to matching files.
+
+    ```ini
+    [*.md]
+    BasedOnStyles = Vale, Google, Microsoft
+    ```
+
+    You can enable/disable individual rules:
+
+    ```ini
+    [*.md]
+    BasedOnStyles = Vale, Google
+    
+    # Disable specific rules
+    Google.Headings = NO
+    Google.Passive = NO
+    
+    # Change rule levels
+    Google.We = suggestion
+    Vale.Terms = error
+    ```
+
+    Rule naming: `{Style}.{RuleFile}` (without the `.yml` extension)
+  </Tab>
+
+  <Tab title="BlockIgnores">
+    **Type:** Array
+
+    Regular expressions for blocks of text to ignore.
+
+    ```ini
+    [*.md]
+    BlockIgnores = (?s) *({< file [^>]* >}.*?{</ ?file >})
+    ```
+
+    Vale skips any text matching these patterns entirely.
+  </Tab>
+
+  <Tab title="TokenIgnores">
+    **Type:** Array
+
+    Regular expressions for inline tokens to ignore.
+
+    ```ini
+    [*.md]
+    TokenIgnores = \$[a-zA-Z0-9_]+\$
+    ```
+
+    Unlike `BlockIgnores`, Vale still processes surrounding text.
+  </Tab>
+
+  <Tab title="Transform">
+    **Type:** String
+
+    Path to an XSLT stylesheet for transforming XML formats before linting.
+
+    ```ini
+    [*.xml]
+    Transform = transform.xsl
+    ```
+  </Tab>
+
+  <Tab title="Lang">
+    **Type:** String  
+    **Default:** `en`
+
+    The language code for format-specific dictionaries.
+
+    ```ini
+    [*.md]
+    Lang = fr
+    ```
+  </Tab>
+
+  <Tab title="View">
+    **Type:** String
+
+    Custom view definition for extracting content from structured formats.
+
+    ```ini
+    [openapi.yml]
+    View = OpenAPI
+    ```
+
+    The view file (`OpenAPI.yml`) must exist in `config/views/` under your `StylesPath`.
+  </Tab>
+
+  <Tab title="CommentDelimiters">
+    **Type:** Array (two items)
+
+    Custom comment delimiters for languages Vale doesn't recognize.
+
+    ```ini
+    [*.xyz]
+    CommentDelimiters = #*, *#
+    ```
+
+    The first item is the start delimiter, the second is the end delimiter.
+  </Tab>
+</Tabs>
+
+## Global vs. format-specific options
+
+Some options work at both global and format-specific levels:
+
+```ini
+# Global: applies to all files unless overridden
+BlockIgnores = (?s)```.*?```
+
+[*.md]
+# Format-specific: applies only to .md files
+BlockIgnores = (?s)~~~.*?~~~
+```
+
+Options that support both:
+- `BlockIgnores`
+- `TokenIgnores`
+- `Lang`
+
+Format-specific values override global values.
+
+## Configuration examples
+
+<Tabs>
+  <Tab title="Minimal config">
+    ```ini
+    StylesPath = styles
+    
+    [*.md]
+    BasedOnStyles = Vale
+    ```
+
+    This is the simplest valid configuration:
+    - Looks for styles in `./styles`
+    - Applies built-in Vale style to Markdown files
+  </Tab>
+
+  <Tab title="Multi-format config">
+    ```ini
+    StylesPath = styles
+    MinAlertLevel = warning
+    Vocab = MyCompany
+    
+    [*.md]
+    BasedOnStyles = Vale, Microsoft, Google
+    
+    [*.rst]
+    BasedOnStyles = Vale, proselint
+    
+    [*.html]
+    BasedOnStyles = Vale
+    BlockIgnores = (?s)<script.*?</script>
+    ```
+
+    Different file types get different style combinations and processing rules.
+  </Tab>
+
+  <Tab title="Rule customization">
+    ```ini
+    StylesPath = styles
+    
+    [*.md]
+    BasedOnStyles = Google, Microsoft
+    
+    # Disable rules
+    Google.Contractions = NO
+    Microsoft.Headings = NO
+    
+    # Change levels
+    Google.Passive = suggestion
+    Microsoft.Spacing = error
+    
+    # Enable only specific Google rules
+    Google.FirstPerson = YES
+    ```
+  </Tab>
+
+  <Tab title="Multi-directory structure">
+    ```ini
+    StylesPath = styles
+    MinAlertLevel = suggestion
+    
+    # General documentation
+    [docs/*.md]
+    BasedOnStyles = Vale, Microsoft
+    
+    # Blog posts
+    [blog/*.md]
+    BasedOnStyles = Vale
+    Microsoft.FirstPerson = NO
+    
+    # API reference
+    [api/*.md]
+    BasedOnStyles = Vale, Google
+    Google.Headings = NO
+    ```
+  </Tab>
+
+  <Tab title="With vocabularies">
+    ```ini
+    StylesPath = styles
+    MinAlertLevel = warning
+    
+    # Use multiple vocabularies
+    Vocab = Base, Marketing
+    
+    [*.md]
+    BasedOnStyles = Vale, Microsoft
+    ```
+
+    This loads accepted/rejected terms from:
+    - `styles/config/vocabularies/Base/accept.txt`
+    - `styles/config/vocabularies/Base/reject.txt`
+    - `styles/config/vocabularies/Marketing/accept.txt`
+    - `styles/config/vocabularies/Marketing/reject.txt`
+  </Tab>
+</Tabs>
+
+## Configuration hierarchy
+
+Vale supports multiple configuration files with inheritance:
+
+```
+~/.config/vale/.vale.ini      # Global defaults
+project/
+├── .vale.ini                 # Project config (inherits global)
+└── docs/
+    └── .vale.ini             # Nested config (inherits project)
+```
+
+Vale merges configurations:
+1. Starts with the closest config file
+2. Merges parent configs (if found)
+3. Applies CLI flags (highest precedence)
+
+<Warning>
+  Nested `.vale.ini` files can be confusing. Use a single project-level config unless you need different settings for subdirectories.
+</Warning>
+
+## Environment variables
+
+Vale recognizes these environment variables:
+
+<AccordionGroup>
+  <Accordion title="VALE_CONFIG_PATH">
+    Override the config file search and use a specific file.
+
+    ```bash
+    VALE_CONFIG_PATH=/path/to/.vale.ini vale myfile.md
+    ```
+  </Accordion>
+
+  <Accordion title="VALE_STYLES_PATH">
+    Override the default styles path.
+
+    ```bash
+    VALE_STYLES_PATH=/shared/styles vale myfile.md
+    ```
+  </Accordion>
+</AccordionGroup>
+
+From `internal/core/config.go:60-64`:
+
+```go
+var ConfigVars = map[string]string{
+    "VALE_CONFIG_PATH": "Override the default search process by specifying a .vale.ini file.",
+    "VALE_STYLES_PATH": "Specify the location of the default StylesPath.",
+}
+```
+
+## Configuration validation
+
+Vale validates your configuration and reports errors:
+
+<AccordionGroup>
+  <Accordion title="Missing StylesPath">
+    ```
+    Error: no styles found at path: styles
+    ```
+
+    Create the styles directory or adjust `StylesPath` to point to an existing directory.
+  </Accordion>
+
+  <Accordion title="Invalid format section">
+    ```
+    Error: The glob pattern '*.{md' could not be compiled
+    ```
+
+    Fix the glob syntax in format section headers.
+  </Accordion>
+
+  <Accordion title="Core option in format section">
+    ```
+    Error: 'StylesPath' is a core option; it should be defined above any syntax-specific options
+    ```
+
+    Move core options before any `[...]` sections.
+  </Accordion>
+
+  <Accordion title="Missing BasedOnStyles">
+    ```
+    Error: format section [*.md] is missing BasedOnStyles
+    ```
+
+    Add at least one style to each format section.
+  </Accordion>
+</AccordionGroup>
+
+## CLI flags override config
+
+Command-line flags take precedence over configuration file values:
+
+```bash
+# Override MinAlertLevel
+vale --minAlertLevel=error myfile.md
+
+# Override config file location
+vale --config=/path/to/.vale.ini myfile.md
+
+# Override output format
+vale --output=JSON myfile.md
+```
+
+Implementation reference: `internal/core/config.go:60-402`, `internal/core/ini.go:1-404`

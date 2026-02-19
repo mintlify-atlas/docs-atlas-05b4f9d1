@@ -1,0 +1,442 @@
+---
+title: "Metrics"
+description: "Calculate and monitor readability metrics in your documentation"
+---
+
+## Overview
+
+Vale computes various metrics about your text files, including:
+
+- Word and sentence counts
+- Readability scores (Flesch, Gunning Fog, etc.)
+- Document structure (headings, paragraphs, lists)
+- Complexity measures (syllables, polysyllabic words)
+
+These metrics can be viewed with the `ls-metrics` command or used to create custom readability rules.
+
+## Viewing Metrics
+
+Use the `ls-metrics` command to calculate metrics for any file:
+
+```bash
+vale ls-metrics document.md
+```
+
+### Example Output
+
+```json
+{
+    "characters": 4523,
+    "complex_words": 89,
+    "heading_h1": 1,
+    "heading_h2": 4,
+    "heading_h3": 7,
+    "list": 3,
+    "long_words": 145,
+    "paragraphs": 23,
+    "polysyllabic_words": 67,
+    "sentences": 42,
+    "syllables": 1834,
+    "words": 982
+}
+```
+
+<Info>
+All metrics are computed from the document's summary content, which excludes code blocks and other non-prose elements.
+</Info>
+
+## Available Metrics
+
+<Tabs>
+  <Tab title="Text Counts">
+    Basic counting metrics:
+
+    | Metric | Description |
+    |--------|-------------|
+    | `characters` | Total character count |
+    | `words` | Total word count |
+    | `sentences` | Number of sentences |
+    | `paragraphs` | Number of paragraphs |
+
+    These are the foundation for most readability formulas.
+  </Tab>
+
+  <Tab title="Complexity">
+    Measures of text complexity:
+
+    | Metric | Description |
+    |--------|-------------|
+    | `syllables` | Total syllable count |
+    | `complex_words` | Words with 3+ syllables |
+    | `long_words` | Words with 7+ characters |
+    | `polysyllabic_words` | Words with 4+ syllables |
+
+    Higher values indicate more complex, harder-to-read text.
+  </Tab>
+
+  <Tab title="Structure">
+    Document structure metrics:
+
+    | Metric | Description |
+    |--------|-------------|
+    | `heading_h1` through `heading_h6` | Count of each heading level |
+    | `list` | Number of lists |
+    | `blockquote` | Number of blockquotes |
+    | `pre` | Number of code blocks |
+
+    Track how your document is organized.
+  </Tab>
+</Tabs>
+
+## Metric Computation
+
+Vale computes metrics using the `ComputeMetrics()` method (see `internal/core/file.go:152-179`):
+
+```go
+func (f *File) ComputeMetrics() (map[string]interface{}, error) {
+    params := map[string]interface{}{}
+    
+    doc := summarize.NewDocument(f.Summary.String())
+    if doc.NumWords == 0 {
+        return params, nil
+    }
+    
+    // Structural metrics from the file
+    for k, v := range f.Metrics {
+        if strings.HasPrefix(k, "table") {
+            continue
+        }
+        k = strings.ReplaceAll(k, ".", "_")
+        params[k] = float64(v)
+    }
+    
+    // Readability metrics from summarize package
+    params["complex_words"] = doc.NumComplexWords
+    params["long_words"] = doc.NumLongWords
+    params["paragraphs"] = doc.NumParagraphs - 1
+    params["sentences"] = doc.NumSentences
+    params["characters"] = doc.NumCharacters
+    params["words"] = doc.NumWords
+    params["polysyllabic_words"] = doc.NumPolysylWords
+    params["syllables"] = doc.NumSyllables
+    
+    return params, nil
+}
+```
+
+<Note>
+Metrics are computed only from the Summary buffer, which contains prose content. Code blocks, comments, and other non-prose elements are excluded.
+</Note>
+
+## The ls-metrics Command
+
+The `ls-metrics` command provides programmatic access to metrics (see `cmd/vale/command.go:141-169`):
+
+```go
+func printMetrics(args []string, _ *core.CLIFlags) error {
+    if len(args) != 1 {
+        return core.NewE100("ls-metrics", errors.New("one argument expected"))
+    } else if !system.FileExists(args[0]) {
+        return errors.New("file not found")
+    }
+    
+    cfg, err := core.NewConfig(&core.CLIFlags{})
+    if err != nil {
+        return err
+    }
+    
+    cfg.MinAlertLevel = 0
+    cfg.GBaseStyles = []string{"Vale"}
+    cfg.Flags.InExt = ".txt"
+    
+    linter, err := lint.NewLinter(cfg)
+    if err != nil {
+        return err
+    }
+    
+    linted, err := linter.Lint([]string{args[0]}, "*")
+    if err != nil {
+        return err
+    }
+    
+    computed, _ := linted[0].ComputeMetrics()
+    return printJSON(computed)
+}
+```
+
+### Usage Examples
+
+<Tabs>
+  <Tab title="Single File">
+    Calculate metrics for one document:
+
+    ```bash
+    vale ls-metrics README.md
+    ```
+
+    Output:
+    ```json
+    {
+        "words": 523,
+        "sentences": 34,
+        "paragraphs": 12
+    }
+    ```
+  </Tab>
+
+  <Tab title="CI/CD Integration">
+    Use in scripts to enforce documentation standards:
+
+    ```bash
+    #!/bin/bash
+    
+    words=$(vale ls-metrics docs/guide.md | jq '.words')
+    
+    if [ "$words" -lt 500 ]; then
+        echo "Error: Guide must be at least 500 words"
+        exit 1
+    fi
+    ```
+  </Tab>
+
+  <Tab title="Multiple Files">
+    Process multiple files in a loop:
+
+    ```bash
+    for file in docs/*.md; do
+        echo "Metrics for $file:"
+        vale ls-metrics "$file" | jq '.words, .sentences'
+    done
+    ```
+  </Tab>
+</Tabs>
+
+## Custom Metric Rules
+
+Vale's `metric` rule type lets you create custom readability rules using any computed metrics.
+
+### Creating a Metric Rule
+
+Create a rule file `MyStyle/Readability.yml`:
+
+```yaml
+extends: metric
+message: "Reading grade level is %s (target: 8th grade or below)"
+formula: |
+  0.39 * (words / sentences) + 11.8 * (syllables / words) - 15.59
+condition: "> 8"
+link: https://en.wikipedia.org/wiki/Flesch%E2%80%93Kincaid_readability_tests
+```
+
+### How Metric Rules Work
+
+The `metric` extension evaluates mathematical expressions (see `internal/check/metric.go`):
+
+<Accordion title="Formula Evaluation">
+  Vale uses the Tengo scripting language to evaluate formulas:
+
+  ```go
+  res, err := evalMath(ctx, o.Formula, parameters)
+  if err != nil {
+      return alerts, err
+  }
+  ```
+
+  All computed metrics are available as variables in your formula.
+</Accordion>
+
+<Accordion title="Condition Checking">
+  The condition is evaluated as a boolean expression:
+
+  ```go
+  eqb := fmt.Sprintf("%f %s", res, o.Condition)
+  match, err := evalMath(ctx, eqb, parameters)
+  
+  if match.(bool) {
+      // Create alert with computed value
+      a := core.Alert{Check: o.Name, Severity: o.Level}
+      a.Message = formatMessages(o.Message, o.Description, 
+          fmt.Sprintf("%.2f", res))
+      alerts = append(alerts, a)
+  }
+  ```
+
+  If the condition is true, Vale creates an alert showing the computed value.
+</Accordion>
+
+### Available Variables
+
+Your formulas can use any of these metrics (see `internal/check/metric.go:16-19`):
+
+```go
+var variables = []string{
+    "pre", "list", "blockquote", 
+    "heading_h1", "heading_h2", "heading_h3",
+    "heading_h4", "heading_h5", "heading_h6"
+}
+```
+
+Plus all the computed metrics: `words`, `sentences`, `syllables`, `paragraphs`, etc.
+
+<Warning>
+Heading metrics use underscores: `heading_h1`, `heading_h2`, etc. Vale automatically converts `heading.h1` syntax in formulas.
+</Warning>
+
+## Example Metric Rules
+
+<Tabs>
+  <Tab title="Flesch Reading Ease">
+    ```yaml
+    extends: metric
+    message: "Flesch Reading Ease score is %s (target: 60+)"
+    level: suggestion
+    formula: |
+      206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / words)
+    condition: "< 60"
+    ```
+
+    Scores above 60 are considered "plain English."
+  </Tab>
+
+  <Tab title="Gunning Fog Index">
+    ```yaml
+    extends: metric
+    message: "Gunning Fog Index is %s (target: 12 or below)"
+    level: warning
+    formula: |
+      0.4 * ((words / sentences) + 100 * (complex_words / words))
+    condition: "> 12"
+    ```
+
+    Estimates years of education needed to understand the text.
+  </Tab>
+
+  <Tab title="Average Sentence Length">
+    ```yaml
+    extends: metric
+    message: "Average sentence length is %s words (target: 15-20)"
+    level: suggestion
+    formula: words / sentences
+    condition: "> 25"
+    ```
+
+    Flags documents with very long sentences.
+  </Tab>
+
+  <Tab title="Document Length">
+    ```yaml
+    extends: metric
+    message: "Document has %s words (target: 500-2000)"
+    level: suggestion
+    formula: words
+    condition: "> 2000"
+    ```
+
+    Enforce length guidelines for specific document types.
+  </Tab>
+</Tabs>
+
+## Advanced Formulas
+
+Metric rules support the full Tengo math library:
+
+```yaml
+extends: metric
+message: "Complexity index is %s"
+formula: |
+  math := import("math")
+  base := (complex_words / words) * 100
+  math.sqrt(base * (sentences / paragraphs))
+condition: "> 15"
+```
+
+Available math functions:
+- `math.sqrt()`, `math.pow()`, `math.abs()`
+- `math.ceil()`, `math.floor()`, `math.round()`
+- `math.log()`, `math.log10()`, `math.exp()`
+- Standard operators: `+`, `-`, `*`, `/`, `%`
+
+<Tip>
+Use `math.round()` to display cleaner values in messages:
+```yaml
+formula: math.round((words / sentences) * 10) / 10
+```
+</Tip>
+
+## Scope Considerations
+
+Metric rules always use `scope: summary`:
+
+```go
+func NewMetric(_ *core.Config, generic baseCheck, path string) (Metric, error) {
+    rule := Metric{}
+    // ...
+    rule.Definition.Scope = []string{"summary"}
+    return rule, nil
+}
+```
+
+This means they evaluate the entire document as a single unit, not individual paragraphs or sentences.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Empty Metrics">
+    If `ls-metrics` returns `{}`, the file may contain only code blocks or comments.
+
+    Check that your file has prose content that Vale can analyze.
+  </Accordion>
+
+  <Accordion title="Division by Zero">
+    If a metric is missing (e.g., no sentences), Vale sets it to 0.0:
+
+    ```go
+    for _, k := range variables {
+        if _, ok := parameters[k]; !ok {
+            parameters[k] = 0.0
+        }
+    }
+    ```
+
+    Be careful with division in formulas. Add guards:
+    ```yaml
+    formula: sentences > 0 ? words / sentences : 0
+    ```
+  </Accordion>
+
+  <Accordion title="Formula Errors">
+    Vale reports the exact error if a formula fails:
+
+    ```
+    Error: script run: line 1: undefined variable 'word'
+    ```
+
+    Check variable names and syntax.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Test Formulas" icon="flask">
+    Use `ls-metrics` to verify metrics exist before using them in formulas.
+  </Card>
+
+  <Card title="Set Thresholds Carefully" icon="gauge">
+    Tune conditions based on your content type. Technical docs may need different targets than marketing copy.
+  </Card>
+
+  <Card title="Provide Context" icon="book">
+    Include links to explain readability scores in your rule messages.
+  </Card>
+
+  <Card title="Use Suggestions" icon="lightbulb">
+    Start with `level: suggestion` for readability rules. They're guidelines, not hard requirements.
+  </Card>
+</CardGroup>
+
+## Related Topics
+
+- [Metric Rule Type](/reference/rules/metric) - Full reference for metric rules
+- [Readability Rules](/reference/rules/readability) - Pre-built readability checks
+- [`ls-metrics` Command](/reference/cli/ls-metrics) - Command reference

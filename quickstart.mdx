@@ -1,80 +1,592 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick Start"
+description: "Get Vale running on your first project in under 5 minutes. Learn the basics of configuration, styles, and linting."
 ---
 
-## Get started in three steps
-
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide walks you through setting up Vale on a sample project. You'll create a configuration file, download a style package, and lint your first document.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Before starting, make sure you've [installed Vale](/installation) on your system.
 </Note>
+
+## Your First Vale Project
+
+<Steps>
+  <Step title="Create a project directory">
+    Create a new directory for this tutorial:
+
+    ```bash
+    mkdir vale-demo
+    cd vale-demo
+    ```
+
+    Create a sample Markdown file to lint:
+
+    ```bash
+    cat > demo.md << 'EOF'
+    # Getting Started
+
+    This document will help you utilize our platform to achieve your goals.
+    Obviously, it's super easy to get started!
+
+    ## Key Benefits
+
+    - Very unique features
+    - World-class support
+    - Cutting-edge technology
+
+    Prior to starting, please read the documentation carefully.
+    EOF
+    ```
+
+    This document contains several style issues we'll detect with Vale.
+  </Step>
+
+  <Step title="Create a Vale configuration">
+    Create a `.vale.ini` file in your project root:
+
+    ```bash
+    cat > .vale.ini << 'EOF'
+    StylesPath = styles
+    MinAlertLevel = suggestion
+
+    Packages = Microsoft
+
+    [*.md]
+    BasedOnStyles = Vale, Microsoft
+    EOF
+    ```
+
+    Let's break down this configuration:
+
+    - **`StylesPath`**: Where Vale looks for style packages (relative to `.vale.ini`)
+    - **`MinAlertLevel`**: Minimum severity to display (`suggestion`, `warning`, or `error`)
+    - **`Packages`**: External style packages to download
+    - **`[*.md]`**: Apply these settings to all Markdown files
+    - **`BasedOnStyles`**: Which styles to use (Vale's built-in style + Microsoft's style guide)
+  </Step>
+
+  <Step title="Download style packages">
+    Vale can automatically download style packages from the [Package Hub](https://vale.sh/hub/):
+
+    ```bash
+    vale sync
+    ```
+
+    You should see output like:
+
+    ```bash
+    Syncing Microsoft
+    Synced 1 package(s) to 'styles'.
+    ```
+
+    This creates a `styles` directory and downloads the Microsoft style guide rules.
+
+    <Tip>
+    The `vale sync` command reads the `Packages` key from your `.vale.ini` and downloads styles from the official Package Hub. You only need to run this once per project (or when adding new packages).
+    </Tip>
+  </Step>
+
+  <Step title="Run Vale">
+    Lint your document:
+
+    ```bash
+    vale demo.md
+    ```
+
+    Vale will output style violations it found:
+
+    ```bash
+    demo.md
+     3:41  warning  Try to avoid using           Vale.Avoid
+                     'utilize'.
+     4:1   warning  'Obviously' is a filler      Vale.Hedging
+                     word.
+     4:16  error    Use 'extremely' instead      Microsoft.Adverbs
+                     of 'super'.
+     8:8   warning  'Very' is a filler word.     Vale.Hedging
+     8:13  warning  'unique' is a                Microsoft.Weasel
+                     redundant phrase.
+    12:1   warning  Use 'before' instead of      Microsoft.Terms
+                     'prior to'.
+
+    ✖ 1 error, 5 warnings and 0 suggestions in 1 file.
+    ```
+
+    <Info>
+    Each alert shows:
+    - **Location**: Line number and column
+    - **Severity**: `error`, `warning`, or `suggestion`
+    - **Message**: What Vale found and why it's an issue
+    - **Rule**: Which rule detected the issue (format: `Style.Rule`)
+    </Info>
+  </Step>
+</Steps>
+
+## Understanding the Output
+
+Vale's default output format is designed for humans. Let's look at each part:
+
+```bash
+ 3:41  warning  Try to avoid using 'utilize'.  Vale.Avoid
+```
+
+- **`3:41`**: Line 3, column 41 in the file
+- **`warning`**: Severity level (can be `error`, `warning`, or `suggestion`)
+- **`Try to avoid using 'utilize'`**: The alert message
+- **`Vale.Avoid`**: The rule that triggered (from the `Vale` style, rule named `Avoid`)
+
+You can change the output format:
+
+<CodeGroup>
+
+```bash Line format
+vale --output=line demo.md
+# Output:
+# demo.md:3:41:warning:Try to avoid using 'utilize'.:Vale.Avoid
+```
+
+```bash JSON format
+vale --output=JSON demo.md
+# Output: Structured JSON perfect for parsing in scripts
+```
+
+```bash Custom template
+vale --output=output.tmpl demo.md
+# Use a custom Go template for formatting
+```
+
+</CodeGroup>
+
+## Exploring Configuration Options
+
+Let's enhance our configuration to demonstrate Vale's flexibility:
+
+```ini .vale.ini
+StylesPath = styles
+MinAlertLevel = suggestion
+
+Packages = Microsoft, Google
+
+# Global settings (apply to all files)
+Vocab = MyCompany
+
+# Markdown files
+[*.md]
+BasedOnStyles = Vale, Microsoft, Google
+
+# Only check for errors in blog posts
+[blog/*.md]
+BasedOnStyles = Vale
+MinAlertLevel = error
+
+# Ignore auto-generated files
+[api-docs/*.md]
+BasedOnStyles =
+```
+
+<Accordion title="Configuration breakdown">
+  - **`Packages`**: Download both Microsoft and Google style guides
+  - **`Vocab`**: Use custom vocabulary from `styles/config/vocabularies/MyCompany/`
+  - **`[*.md]`**: Default rules for all Markdown files
+  - **`[blog/*.md]`**: Override settings for blog posts (only show errors)
+  - **`[api-docs/*.md]`**: Disable linting for auto-generated API docs
+</Accordion>
+
+<Info>
+Vale supports glob patterns in section headers, letting you apply different rules to different parts of your project. More specific patterns override general ones.
+</Info>
+
+## Working with Styles
+
+Vale's power comes from its extensible style system. You have three options:
+
+<Tabs>
+  <Tab title="Pre-built Packages">
+    Download styles from the [Package Hub](https://vale.sh/hub/):
+
+    **Popular packages:**
+    - **Microsoft**: Microsoft Writing Style Guide
+    - **Google**: Google Developer Documentation Style Guide
+    - **Readability**: Readability metrics and suggestions
+    - **proselint**: General writing advice
+    - **write-good**: Plain English suggestions
+
+    Add packages to `.vale.ini`:
+
+    ```ini
+    Packages = Microsoft, Google, Readability
+    ```
+
+    Then run:
+
+    ```bash
+    vale sync
+    ```
+
+    <Tip>
+    Browse all available packages at [vale.sh/hub](https://vale.sh/hub/)
+    </Tip>
+  </Tab>
+
+  <Tab title="Create Your Own">
+    Create custom rules in the `styles` directory:
+
+    ```bash
+    mkdir -p styles/MyStyle
+    cat > styles/MyStyle/Products.yml << 'EOF'
+    extends: substitution
+    message: "Use '%s' instead of '%s'"
+    level: error
+    swap:
+      product name: ProductName
+      company inc: Company, Inc.
+      web site: website
+    EOF
+    ```
+
+    Update `.vale.ini` to use your style:
+
+    ```ini
+    [*.md]
+    BasedOnStyles = MyStyle
+    ```
+
+    <Info>
+    Vale supports 12 rule types: `existence`, `substitution`, `occurrence`, `repetition`, `consistency`, `conditional`, `capitalization`, `readability`, `spelling`, `sequence`, `metric`, and `script`.
+    </Info>
+  </Tab>
+
+  <Tab title="Mix and Match">
+    Combine pre-built packages with custom rules:
+
+    ```ini
+    # Download external packages
+    Packages = Microsoft, Google
+
+    [*.md]
+    # Use external packages
+    BasedOnStyles = Microsoft, Google
+
+    # Plus your custom style
+    BasedOnStyles = Microsoft, Google, MyCompany
+    ```
+
+    Your project structure:
+
+    ```bash
+    .
+    ├── .vale.ini
+    ├── styles/
+    │   ├── Microsoft/       # Downloaded
+    │   ├── Google/          # Downloaded
+    │   └── MyCompany/       # Custom
+    │       ├── Branding.yml
+    │       └── Terms.yml
+    └── docs/
+        └── README.md
+    ```
+  </Tab>
+</Tabs>
+
+## Understanding Severity Levels
+
+Vale rules have three severity levels:
+
+<CardGroup cols={3}>
+  <Card title="suggestion" icon="lightbulb">
+    Optional improvements. Doesn't fail CI builds.
+  </Card>
+
+  <Card title="warning" icon="triangle-exclamation">
+    Recommended changes. May fail CI depending on configuration.
+  </Card>
+
+  <Card title="error" icon="circle-xmark">
+    Must be fixed. Fails CI builds by default.
+  </Card>
+</CardGroup>
+
+Control which levels appear:
+
+```ini .vale.ini
+# Show everything
+MinAlertLevel = suggestion
+
+# Only show warnings and errors
+MinAlertLevel = warning
+
+# Only show errors
+MinAlertLevel = error
+```
+
+<Note>
+By default, Vale exits with code 1 if any errors are found. Use `--no-exit` to suppress this behavior for CI systems that handle exit codes differently.
+</Note>
+
+## Common Vale Commands
+
+<CodeGroup>
+
+```bash Lint files
+# Single file
+vale README.md
+
+# Multiple files
+vale README.md CONTRIBUTING.md
+
+# Directory (recursive)
+vale docs/
+
+# Glob patterns
+vale --glob='*.{md,txt}' docs/
+```
+
+```bash Config inspection
+# Show current config
+vale ls-config
+
+# List config directories
+vale ls-dirs
+
+# Show environment variables
+vale ls-vars
+```
+
+```bash Metrics and analysis
+# Show document metrics
+vale ls-metrics README.md
+
+# Output: readability scores, word count, etc.
+```
+
+```bash Package management
+# Download style packages
+vale sync
+
+# Use custom config
+vale --config=/path/to/.vale.ini sync
+```
+
+</CodeGroup>
+
+## Real-World Example
+
+Here's a production-ready configuration for a technical documentation project:
+
+```ini .vale.ini
+# Use local styles directory
+StylesPath = styles
+
+# Show all issues
+MinAlertLevel = suggestion
+
+# Download external packages
+Packages = Microsoft, Google, Readability, write-good
+
+# Company-specific terminology
+Vocab = Acme
+
+# Default for all files
+[*]
+BasedOnStyles = Vale
+
+# Documentation files
+[docs/**/*.md]
+BasedOnStyles = Vale, Microsoft, Google, Readability
+
+# Blog posts (more relaxed)
+[blog/**/*.md]
+BasedOnStyles = Vale, write-good
+MinAlertLevel = warning
+
+# API documentation (strict)
+[api/**/*.md]
+BasedOnStyles = Microsoft, Google
+MinAlertLevel = error
+
+# README files (extra checks)
+[README*.md]
+BasedOnStyles = Vale, Microsoft, Google, Readability, write-good
+
+# Ignore generated files
+[node_modules/**]
+BasedOnStyles =
+
+[vendor/**]
+BasedOnStyles =
+```
+
+This configuration:
+- Uses multiple style guides for different content types
+- Enforces stricter rules on API docs
+- Relaxes rules for blog posts
+- Ignores dependency directories
+- Uses custom vocabulary for company terms
+
+## Next Steps
+
+You now have Vale running! Here's what to explore next:
+
+<CardGroup cols={2}>
+  <Card title="Configuration Deep Dive" icon="gear" href="/concepts/configuration">
+    Learn about all `.vale.ini` options, glob patterns, and inheritance.
+  </Card>
+
+  <Card title="Understanding Styles" icon="palette" href="/concepts/styles">
+    How Vale's style system works and how to create custom rules.
+  </Card>
+
+  <Card title="Writing Rules" icon="pencil" href="/guides/writing-rules">
+    Create your first custom Vale rule with detailed examples.
+  </Card>
+
+  <Card title="CI/CD Integration" icon="git-branch" href="/guides/ci-integration">
+    Add Vale to GitHub Actions, GitLab CI, CircleCI, and more.
+  </Card>
+
+  <Card title="Scoping Rules" icon="crosshairs" href="/concepts/scoping">
+    Control exactly where rules apply in your documents.
+  </Card>
+
+  <Card title="Custom Vocabularies" icon="book" href="/concepts/vocabularies">
+    Manage accepted and rejected terminology.
+  </Card>
+</CardGroup>
+
+## Tips and Tricks
+
+<Accordion title="Use vale with stdin">
+  Vale can read from standard input, useful for integrating with other tools:
+
+  ```bash
+  echo "This is some text to check" | vale
+
+  # Or from a file
+  cat document.md | vale --ext=.md
+  ```
+
+  <Info>
+  Use `--ext` to specify the file extension when reading from stdin. This helps Vale determine the correct parser to use.
+  </Info>
+</Accordion>
+
+<Accordion title="Ignore specific lines">
+  Disable Vale for specific lines using comments:
+
+  ```markdown
+  <!-- vale off -->
+
+  This text won't be linted by Vale.
+
+  <!-- vale on -->
+
+  This text will be linted.
+  ```
+
+  Or disable specific rules:
+
+  ```markdown
+  <!-- vale Style.Rule = NO -->
+
+  This disables only Style.Rule.
+
+  <!-- vale Style.Rule = YES -->
+  ```
+</Accordion>
+
+<Accordion title="Lint multiple formats">
+  Vale automatically detects file formats:
+
+  ```bash
+  # Markdown
+  vale docs/*.md
+
+  # HTML
+  vale site/*.html
+
+  # reStructuredText
+  vale docs/*.rst
+
+  # AsciiDoc
+  vale docs/*.adoc
+
+  # Mixed formats
+  vale docs/
+  ```
+
+  Each format has intelligent parsing to avoid false positives in code blocks and other non-prose content.
+</Accordion>
+
+<Accordion title="Speed up linting with filters">
+  Use `.vale.ini` to skip directories:
+
+  ```ini
+  # Ignore everything in these directories
+  [node_modules/**]
+  BasedOnStyles =
+
+  [vendor/**]
+  BasedOnStyles =
+
+  [build/**]
+  BasedOnStyles =
+  ```
+
+  Or use `.gitignore` patterns - Vale respects them by default.
+</Accordion>
+
+## Troubleshooting
+
+<Warning>
+**Common issues and solutions**
+</Warning>
+
+<Accordion title="No style found">
+  **Error:** `The path 'styles' does not exist`
+
+  **Solution:** Run `vale sync` to download style packages, or create the styles directory:
+
+  ```bash
+  mkdir styles
+  vale sync
+  ```
+</Accordion>
+
+<Accordion title="Config not found">
+  **Error:** `Unable to locate a configuration file`
+
+  **Solution:** Vale searches for `.vale.ini` in the current directory and parent directories. Either:
+
+  1. Create `.vale.ini` in your project root
+  2. Create a global config at `~/.vale.ini`
+  3. Use `--config` to specify a path: `vale --config=/path/to/.vale.ini docs/`
+</Accordion>
+
+<Accordion title="Rules not applying">
+  **Problem:** Vale isn't finding issues you expect
+
+  **Debug steps:**
+
+  1. Check which config Vale is using:
+     ```bash
+     vale ls-config
+     ```
+
+  2. Verify the file matches your glob pattern:
+     ```bash
+     # This rule: [docs/*.md]
+     # Matches: docs/README.md
+     # Doesn't match: docs/guides/example.md (needs docs/**/*.md)
+     ```
+
+  3. Check rule severity vs. `MinAlertLevel`:
+     ```ini
+     # Won't show suggestions if MinAlertLevel = warning
+     MinAlertLevel = suggestion  # Shows everything
+     ```
+</Accordion>
+
+<Tip>
+Run `vale ls-config` to see your active configuration, including which rules are loaded and what settings are applied.
+</Tip>

@@ -1,0 +1,207 @@
+---
+title: "vale fix"
+description: "Attempt to automatically fix Vale alerts using suggested corrections."
+---
+
+The `fix` command attempts to automatically apply corrections to Vale alerts that provide fix suggestions.
+
+<Warning>
+  This command is currently an experimental API feature and is not fully documented. The interface may change in future releases.
+</Warning>
+
+## Usage
+
+```bash
+vale fix <alert>
+```
+
+<ParamField path="alert" type="string" required>
+  Either a JSON alert string or a path to a file containing an alert in JSON format.
+</ParamField>
+
+## How It Works
+
+The `fix` command:
+
+1. Parses the alert JSON (either from a string or file)
+2. Extracts the suggested correction from the alert's `Action` field
+3. Applies the correction to the text
+4. Returns the result as JSON
+
+<Note>
+  Only alerts that include an `Action` field with fix suggestions can be automatically corrected. Not all Vale rules provide automatic fixes.
+</Note>
+
+## Alert Format
+
+Vale alerts in JSON format include fix information when available:
+
+```json
+{
+  "Action": {
+    "Name": "replace",
+    "Params": ["correct text"]
+  },
+  "Check": "StyleName.RuleName",
+  "Description": "Rule description",
+  "Line": 5,
+  "Link": "https://example.com/rule-docs",
+  "Message": "Use 'correct text' instead of 'wrong text'.",
+  "Severity": "error",
+  "Span": [10, 20],
+  "Match": "wrong text"
+}
+```
+
+<ParamField path="Action" type="object">
+  Contains the fix suggestion, if available.
+  
+  <ParamField path="Action.Name" type="string">
+    The type of fix action (e.g., `replace`, `remove`).
+  </ParamField>
+  
+  <ParamField path="Action.Params" type="array">
+    Parameters for the fix action, such as replacement text.
+  </ParamField>
+</ParamField>
+
+## Examples
+
+### Fix from File
+
+If you have an alert saved in a file:
+
+```bash
+vale fix alert.json
+```
+
+### Fix from String
+
+Pass the alert JSON directly:
+
+```bash
+vale fix '{"Action":{"Name":"replace","Params":["web"]},"Check":"Demo.Terms","Line":1,"Message":"Use 'web' instead of 'internet'.","Match":"internet","Span":[10,18]}'
+```
+
+## Output
+
+The command returns JSON with the fix result:
+
+```json
+{
+  "original": "Check the internet for more info.",
+  "fixed": "Check the web for more info.",
+  "applied": true
+}
+```
+
+## Which Rules Support Auto-Fix?
+
+Rules that provide automatic fixes include:
+
+- **Substitution rules** - Suggest replacing terms with alternatives
+- **Capitalization rules** - Fix incorrect capitalization
+- **Consistency rules** - Standardize spelling variations
+
+You can identify fixable alerts by checking for the `Action` field in JSON output:
+
+```bash
+vale --output=JSON myfile.md | jq '.[] | .[] | select(.Action.Name != "")'
+```
+
+## Integration Examples
+
+### Editor Integration
+
+Editors can use this command to implement auto-fix functionality:
+
+```javascript
+// Get alerts from Vale
+const alerts = JSON.parse(execSync('vale --output=JSON file.md'));
+
+// Find fixable alerts
+const fixable = alerts['file.md'].filter(alert => alert.Action.Name !== '');
+
+// Apply fixes
+for (const alert of fixable) {
+  const result = JSON.parse(execSync(`vale fix '${JSON.stringify(alert)}'`));
+  // Apply result.fixed to the document
+}
+```
+
+### Batch Fixing
+
+Process multiple alerts:
+
+```bash
+#!/bin/bash
+vale --output=JSON myfile.md > alerts.json
+
+jq -c '.[] | .[] | select(.Action.Name != "")' alerts.json | while read alert; do
+  echo "Fixing: $(echo $alert | jq -r '.Message')"
+  vale fix "$alert"
+done
+```
+
+### CI/CD Automation
+
+Automatically fix simple issues in CI:
+
+```yaml GitHub Actions
+- name: Get Vale alerts
+  id: vale
+  run: |
+    vale --output=JSON . > alerts.json || true
+
+- name: Auto-fix
+  run: |
+    jq -c '.[] | .[] | select(.Action.Name != "")' alerts.json | while read alert; do
+      vale fix "$alert"
+    done
+```
+
+## Limitations
+
+<Warning>
+  The `fix` command is experimental and has several limitations:
+</Warning>
+
+- **Read-only** - The command outputs the fix but doesn't modify files directly
+- **Single alert** - Processes one alert at a time
+- **No context** - May not handle complex document structures correctly
+- **Rule-dependent** - Only works with rules that provide fix suggestions
+- **Experimental** - The interface may change without notice
+
+## Creating Fixable Rules
+
+If you're writing custom Vale rules, you can make them fixable by including suggestions:
+
+```yaml StyleName/FixableRule.yml
+extends: substitution
+message: "Use '%s' instead of '%s'."
+level: error
+ignorecase: true
+swap:
+  internet: web
+  e-mail: email
+```
+
+Substitution rules automatically generate fix suggestions with the replacement text.
+
+## API Usage
+
+The `fix` command is part of Vale's private API and is primarily intended for tool integration:
+
+- Editor plugins (VS Code, Vim, etc.)
+- Language servers
+- Custom linting tools
+- Automated fixing utilities
+
+<Info>
+  If you're building tools that integrate with Vale, consider using the JSON output format with the `fix` command to implement auto-fix functionality.
+</Info>
+
+## Related Commands
+
+- [lint](/reference/cli/lint) - Generate alerts that can be fixed
+- [Overview](/reference/cli/overview) - See all CLI options for output formats

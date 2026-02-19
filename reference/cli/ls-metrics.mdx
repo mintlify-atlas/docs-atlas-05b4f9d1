@@ -1,0 +1,303 @@
+---
+title: "vale ls-metrics"
+description: "Print readability metrics and statistics for a file."
+---
+
+The `ls-metrics` command analyzes a file and outputs various readability metrics and statistics as JSON.
+
+## Usage
+
+```bash
+vale ls-metrics <file>
+```
+
+<ParamField path="file" type="string" required>
+  Path to the file to analyze. The file must exist.
+</ParamField>
+
+<Warning>
+  This command requires exactly one file argument. It does not accept multiple files or directories.
+</Warning>
+
+## Output Format
+
+The command outputs a JSON object containing computed metrics:
+
+```json
+{
+  "paragraphs": 12,
+  "sentences": 45,
+  "words": 892,
+  "characters": 4521,
+  "syllables": 1247,
+  "polysyllabicWords": 87,
+  "reading_time": 4,
+  "automated_readability_index": 9.2,
+  "coleman_liau_index": 10.1,
+  "flesch_kincaid_grade_level": 8.7,
+  "flesch_reading_ease": 67.3,
+  "gunning_fog": 10.5,
+  "smog_index": 9.1,
+  "linsear_write": 8.9
+}
+```
+
+## Metrics Explained
+
+### Basic Statistics
+
+<ParamField path="paragraphs" type="number">
+  Number of paragraphs in the document.
+</ParamField>
+
+<ParamField path="sentences" type="number">
+  Total sentence count.
+</ParamField>
+
+<ParamField path="words" type="number">
+  Total word count, excluding punctuation.
+</ParamField>
+
+<ParamField path="characters" type="number">
+  Total character count, including spaces.
+</ParamField>
+
+<ParamField path="syllables" type="number">
+  Total syllable count across all words.
+</ParamField>
+
+<ParamField path="polysyllabicWords" type="number">
+  Count of words with three or more syllables.
+</ParamField>
+
+<ParamField path="reading_time" type="number">
+  Estimated reading time in minutes, based on average reading speed of 200 words per minute.
+</ParamField>
+
+### Readability Scores
+
+Vale calculates several standard readability indices:
+
+<ParamField path="automated_readability_index" type="number">
+  **Automated Readability Index (ARI)**
+  
+  Estimates the U.S. grade level needed to comprehend the text. Based on characters per word and words per sentence.
+  
+  - Lower scores (1-5): Elementary school
+  - Middle scores (6-10): Middle/high school
+  - Higher scores (11+): College level
+</ParamField>
+
+<ParamField path="coleman_liau_index" type="number">
+  **Coleman-Liau Index**
+  
+  Estimates U.S. grade level using character count instead of syllables.
+  
+  - Score of 8: Eighth grade reading level
+  - Score of 12: High school senior reading level
+</ParamField>
+
+<ParamField path="flesch_kincaid_grade_level" type="number">
+  **Flesch-Kincaid Grade Level**
+  
+  Translates the Flesch Reading Ease score into a U.S. school grade level.
+  
+  - Score of 6: Sixth grade level
+  - Score of 10: Tenth grade level
+  - Score of 13+: College level
+</ParamField>
+
+<ParamField path="flesch_reading_ease" type="number">
+  **Flesch Reading Ease**
+  
+  Rates text on a 100-point scale. Higher scores indicate easier readability.
+  
+  - 90-100: Very easy (5th grade)
+  - 60-70: Standard (8th-9th grade)
+  - 30-50: Difficult (College level)
+  - 0-30: Very difficult (College graduate)
+</ParamField>
+
+<ParamField path="gunning_fog" type="number">
+  **Gunning Fog Index**
+  
+  Estimates years of formal education needed to understand the text.
+  
+  - Score of 8: Eighth grade level
+  - Score of 12: High school senior level
+  - Score of 17+: College graduate level
+  
+  Based on sentence length and polysyllabic words.
+</ParamField>
+
+<ParamField path="smog_index" type="number">
+  **SMOG Index (Simple Measure of Gobbledygook)**
+  
+  Estimates years of education needed to understand a piece of writing.
+  
+  - Score of 10: Tenth grade level
+  - Score of 14: Undergraduate level
+  
+  Particularly useful for technical writing.
+</ParamField>
+
+<ParamField path="linsear_write" type="number">
+  **Linsear Write Formula**
+  
+  Designed specifically for technical writing. Calculates grade level based on easy and hard words.
+  
+  - Score below 8: Easy for students
+  - Score of 8-11: Medium difficulty
+  - Score above 11: Difficult
+</ParamField>
+
+## Examples
+
+<CodeGroup>
+```bash Basic usage
+vale ls-metrics README.md
+```
+
+```bash Pretty print with jq
+vale ls-metrics document.md | jq
+```
+
+```bash Extract specific metric
+vale ls-metrics file.md | jq '.flesch_reading_ease'
+```
+
+```bash Check reading time
+vale ls-metrics article.md | jq '.reading_time'
+```
+
+```bash Compare multiple files
+for file in docs/*.md; do
+  echo "$file: $(vale ls-metrics $file | jq '.words') words"
+done
+```
+</CodeGroup>
+
+## Use Cases
+
+### Verify Readability Goals
+
+Check if content meets readability targets:
+
+```bash
+FLESCH=$(vale ls-metrics document.md | jq '.flesch_reading_ease')
+if (( $(echo "$FLESCH < 60" | bc -l) )); then
+  echo "Warning: Text may be too difficult"
+fi
+```
+
+### Track Content Complexity
+
+Monitor documentation complexity over time:
+
+```bash
+vale ls-metrics docs/guide.md | jq '{
+  words,
+  flesch_reading_ease,
+  reading_time
+}'
+```
+
+Output:
+```json
+{
+  "words": 1250,
+  "flesch_reading_ease": 65.4,
+  "reading_time": 6
+}
+```
+
+### Generate Reports
+
+Create readability reports for multiple files:
+
+```bash
+#!/bin/bash
+echo "File,Words,Flesch,Grade Level"
+for file in docs/**/*.md; do
+  METRICS=$(vale ls-metrics "$file")
+  WORDS=$(echo $METRICS | jq '.words')
+  FLESCH=$(echo $METRICS | jq '.flesch_reading_ease')
+  GRADE=$(echo $METRICS | jq '.flesch_kincaid_grade_level')
+  echo "$file,$WORDS,$FLESCH,$GRADE"
+done
+```
+
+### CI/CD Integration
+
+Enforce readability standards in continuous integration:
+
+```yaml GitHub Actions
+- name: Check readability
+  run: |
+    FLESCH=$(vale ls-metrics docs/readme.md | jq '.flesch_reading_ease')
+    if (( $(echo "$FLESCH < 60" | bc -l) )); then
+      echo "::error::Documentation readability score too low: $FLESCH"
+      exit 1
+    fi
+```
+
+## How Metrics Are Calculated
+
+<Steps>
+  <Step title="Text extraction">
+    Vale processes the file using a minimal configuration that extracts plain text while respecting markup structure.
+  </Step>
+  
+  <Step title="Tokenization">
+    The text is split into paragraphs, sentences, and words using linguistic rules.
+  </Step>
+  
+  <Step title="Syllable counting">
+    Vale uses an algorithm to estimate syllable counts for English words.
+  </Step>
+  
+  <Step title="Score computation">
+    Each readability formula is applied using the gathered statistics.
+  </Step>
+</Steps>
+
+<Info>
+  Metrics are calculated using a default `.txt` format configuration. For Markdown or other markup, Vale processes only the text content, excluding code blocks and similar elements.
+</Info>
+
+## Understanding Readability Scores
+
+### Target Scores by Audience
+
+| Audience | Flesch Ease | Grade Level | Fog Index |
+|----------|-------------|-------------|------------|
+| General public | 60-70 | 7-8 | 8-10 |
+| Technical docs | 50-60 | 9-10 | 10-12 |
+| Academic | 30-50 | 13+ | 12+ |
+| Marketing | 60-80 | 6-8 | 8 |
+
+### Improving Scores
+
+To improve readability metrics:
+
+- **Shorten sentences** - Break complex sentences into shorter ones
+- **Use simpler words** - Replace polysyllabic words with shorter alternatives
+- **Reduce passive voice** - Use active constructions
+- **Add paragraphs** - Break up long blocks of text
+- **Vary sentence length** - Mix short and medium sentences
+
+<Tip>
+  Use the metrics as guidelines, not absolute rules. Technical documentation often requires complexity that results in lower readability scores.
+</Tip>
+
+## Limitations
+
+- **English only** - Metrics are designed for English text and may not be accurate for other languages
+- **Single file** - The command processes only one file at a time
+- **Estimation** - Syllable counting and reading time are estimates
+- **No context** - Metrics don't account for document purpose or audience expertise
+
+## Related Commands
+
+- [lint](/reference/cli/lint) - Lint files for style and grammar issues
+- [ls-config](/reference/cli/ls-config) - View configuration affecting metric calculation

@@ -1,0 +1,493 @@
+---
+title: Format Configuration
+description: Configure how Vale processes different markup and code formats.
+---
+
+Vale supports a wide range of file formats out of the box and provides extensive configuration options for customizing how each format is processed.
+
+## Supported Formats
+
+Vale automatically detects and processes these formats based on file extensions:
+
+### Markup Formats
+
+- **Markdown**: `.md`, `.mdown`, `.markdown`, `.markdn`
+- **MDX**: `.mdx` (Markdown with JSX)
+- **reStructuredText**: `.rst`, `.rest`
+- **AsciiDoc**: `.adoc`, `.asciidoc`, `.asc`
+- **HTML**: `.html`, `.htm`, `.shtml`, `.xhtml`
+- **XML**: `.xml`, `.xsd`
+- **DITA**: `.dita`
+- **Org**: `.org`
+
+### Code Formats
+
+Vale can process comments in code files:
+
+- **C/C++**: `.c`, `.cpp`, `.cc`, `.h`, `.hpp`, `.c++`, `.h++`
+- **C#**: `.cs`, `.csx`
+- **Go**: `.go`
+- **Java**: `.java`, `.bsh`
+- **JavaScript**: `.js`, `.jsx`
+- **TypeScript**: `.ts`, `.tsx`
+- **Python**: `.py`, `.py3w`, `.pyw`, `.pyi`
+- **Ruby**: `.rb`, `Gemfile`, `Rakefile`, `Brewfile`, `.gemspec`
+- **Rust**: `.rs`
+- **PHP**: `.php`
+- **Lua**: `.lua`
+- **Haskell**: `.hs`
+- **Clojure**: `.clj`, `.cljs`, `.cljc`, `.cljd`
+- **R**: `.r`, `.R`
+- **Perl**: `.pl`, `.pm`, `.pod`
+- **PowerShell**: `.ps1`, `.psm1`, `.psd1`
+- **Scala**: `.scala`, `.sbt`
+- **Swift**: `.swift`
+- **CSS**: `.css`, `.sass`, `.less`
+- **Protocol Buffers**: `.proto`
+
+### Data Formats
+
+- **JSON**: `.json`
+- **YAML**: `.yaml`, `.yml`
+- **TOML**: `.toml`
+
+### Plain Text
+
+- **Text**: `.txt`
+
+## Format Mapping
+
+The `[formats]` section maps unknown file extensions to known formats:
+
+```ini
+[formats]
+ts = js
+mdx = md
+jsx = js
+vue = html
+```
+
+This tells Vale to:
+
+- Process `.ts` files like `.js` files
+- Process `.mdx` files like `.md` files
+- Process `.jsx` files like `.js` files
+- Process `.vue` files like `.html` files
+
+<ParamField path="[formats]" type="section">
+  Maps file extensions to Vale's internal format handlers. The key is the extension to map (without a dot), and the value is the target format.
+  
+  ```ini
+  [formats]
+  custom = md
+  ```
+</ParamField>
+
+## Format-Specific Configuration
+
+Use syntax-specific sections to configure how Vale processes different formats.
+
+### Markup Transformations
+
+For XML formats, you can apply XSLT transformations before processing:
+
+```ini
+[*.xml]
+Transform = .vale/docbook.xsl
+BasedOnStyles = Vale
+```
+
+Vale applies the transformation and then lints the resulting HTML.
+
+<ParamField path="Transform" type="string">
+  Path to an XSLT stylesheet (relative to the config file). The stylesheet should transform XML to HTML.
+  
+  ```ini
+  [*.xml]
+  Transform = ../xsl/docbook-to-html.xsl
+  ```
+</ParamField>
+
+### Token Ignoring
+
+Ignore inline patterns specific to a format:
+
+```ini
+[*.md]
+# Ignore Liquid tags
+TokenIgnores = ({%.+?%}), ({{.+?}})
+
+[*.mdx]
+# Ignore MDX components
+TokenIgnores = '({#[^\n}]+})'
+
+[*.rst]
+# Ignore reStructuredText directives
+TokenIgnores = (\\c \w+)
+```
+
+<ParamField path="TokenIgnores" type="array">
+  Regular expressions for inline tokens to ignore. Comma-separated list.
+  
+  ```ini
+  [*.md]
+  TokenIgnores = ({%.+?%}), ({{.+?}})
+  ```
+</ParamField>
+
+### Block Ignoring
+
+Ignore entire blocks of text:
+
+```ini
+[*.md]
+# Ignore code blocks
+BlockIgnores = (?s)```.*?```
+
+[*.rst]
+# Ignore code-block directives
+BlockIgnores = (?s).. code-block::.*?\n\n
+```
+
+<ParamField path="BlockIgnores" type="array">
+  Regular expressions for blocks to ignore. Use `(?s)` for multiline patterns.
+  
+  ```ini
+  [*.md]
+  BlockIgnores = (?s)```.*?```
+  ```
+</ParamField>
+
+### Comment Processing
+
+For code files, specify custom comment delimiters:
+
+```ini
+[*.c]
+CommentDelimiters = {/*, */}
+
+[*.ps1]
+CommentDelimiters = {<#, #>}
+```
+
+<ParamField path="CommentDelimiters" type="array">
+  Start and end delimiters for block comments. Must be exactly two values in curly braces.
+  
+  ```ini
+  [*.custom]
+  CommentDelimiters = {<!--, -->}
+  ```
+</ParamField>
+
+<Note>
+Vale v3+ uses tree-sitter grammars for most languages, so `CommentDelimiters` is only needed for languages without tree-sitter support.
+</Note>
+
+## Scope Control
+
+Control which parts of markup files Vale processes.
+
+### Ignored Scopes
+
+Completely ignore specific HTML elements:
+
+```ini
+IgnoredScopes = code, tt, script, style
+```
+
+Text within these elements is not processed at all.
+
+<ParamField path="IgnoredScopes" type="array">
+  HTML tags and scopes to completely ignore. Applies globally or per syntax.
+  
+  ```ini
+  [*.html]
+  IgnoredScopes = code, pre, script
+  ```
+</ParamField>
+
+### Skipped Scopes
+
+Skip block-level elements:
+
+```ini
+SkippedScopes = script, style, pre, figure, blockquote
+```
+
+Similar to `IgnoredScopes` but for block elements.
+
+<ParamField path="SkippedScopes" type="array">
+  Block-level HTML elements to skip.
+  
+  ```ini
+  SkippedScopes = script, style, pre
+  ```
+</ParamField>
+
+### Ignored Classes
+
+Ignore elements with specific CSS classes:
+
+```ini
+IgnoredClasses = no-prose, skip-vale, technical-term
+```
+
+<ParamField path="IgnoredClasses" type="array">
+  CSS class names. Elements with these classes are ignored.
+  
+  ```ini
+  IgnoredClasses = no-prose, skip-lint
+  ```
+</ParamField>
+
+### Complex Scope Patterns
+
+For markup formats that support custom scopes:
+
+```ini
+[*.mdx]
+IgnoredScopes = code, tt, frontmatter.title.mdx
+```
+
+This ignores the `title` field in MDX frontmatter in addition to code blocks.
+
+## Language Identification
+
+Specify language IDs for syntax highlighting and tree-sitter grammar selection:
+
+```ini
+[*.mdx]
+Lang = javascript
+
+[*.vue]
+Lang = html
+```
+
+<ParamField path="Lang" type="string">
+  Language identifier for tree-sitter grammar selection. Affects how code and embedded content are parsed.
+  
+  ```ini
+  [*.svelte]
+  Lang = html
+  ```
+</ParamField>
+
+## AsciiDoc Configuration
+
+AsciiDoc supports custom attributes via the `[asciidoctor]` section:
+
+```ini
+[asciidoctor]
+toc = left
+source-highlighter = pygments
+icons = font
+```
+
+These attributes are passed to the AsciiDoc processor when parsing files.
+
+<ParamField path="[asciidoctor]" type="section">
+  AsciiDoc attributes as key-value pairs.
+  
+  ```ini
+  [asciidoctor]
+  sectnums = true
+  toc = left
+  ```
+</ParamField>
+
+## Data Format Views
+
+For structured data formats (JSON, YAML), use views to extract specific content:
+
+```ini
+[*.json]
+BasedOnStyles = Vale
+View = APISchema
+
+[*.yml]
+BasedOnStyles = Vale
+View = OpenAPI
+```
+
+Views are defined in `config/views/[name].yml` and specify which fields to extract and lint.
+
+<ParamField path="View" type="string">
+  Name of a view definition from `config/views/`. The view extracts specific content from structured files.
+  
+  ```ini
+  [openapi.yml]
+  View = OpenAPI
+  ```
+</ParamField>
+
+<Tip>
+See the [Transformations documentation](/advanced/transformations) for creating custom views.
+</Tip>
+
+## Example: Multi-Format Project
+
+Here's a comprehensive example for a project with multiple format types:
+
+```ini
+StylesPath = .github/styles
+MinAlertLevel = suggestion
+
+Vocab = ProjectName
+
+# Scope configuration
+IgnoredScopes = code, tt, script, style
+SkippedScopes = pre, figure
+IgnoredClasses = no-prose, technical
+
+# Format mappings
+[formats]
+ts = js
+mdx = md
+vue = html
+
+# Markdown files
+[*.md]
+BasedOnStyles = Vale, Microsoft
+TokenIgnores = ({%.+?%}), ({{.+?}})
+BlockIgnores = (?s)```.*?```
+
+# MDX with React components
+[*.mdx]
+BasedOnStyles = Vale, Microsoft
+Lang = javascript
+TokenIgnores = '({#[^\n}]+})'
+IgnoredScopes = code, tt, frontmatter.title
+
+# reStructuredText
+[*.rst]
+BasedOnStyles = Vale, Google
+TokenIgnores = (\\c \w+)
+
+# AsciiDoc
+[*.adoc]
+BasedOnStyles = Vale, Google
+
+[asciidoctor]
+toc = left
+source-highlighter = pygments
+
+# XML with transformation
+[*.xml]
+BasedOnStyles = Vale
+Transform = .vale/docbook.xsl
+
+# TypeScript comments
+[*.{ts,tsx}]
+BasedOnStyles = Vale
+Vale.Spelling = YES
+
+# Python comments
+[*.py]
+BasedOnStyles = Vale
+Vale.Spelling = YES
+View = Python
+
+# API specifications
+[openapi.yml]
+BasedOnStyles = Vale, Google
+View = OpenAPI
+
+[*.json]
+BasedOnStyles = Vale
+View = APISchema
+```
+
+## Format Detection
+
+Vale determines a file's format using this process:
+
+1. **Check format mapping**: Look in `[formats]` section
+2. **Match extension**: Use built-in extension patterns
+3. **Detect format type**: Classify as markup, code, data, or text
+4. **Apply settings**: Use format-specific configuration
+
+You can see how Vale detects a file's format:
+
+```bash
+vale --debug myfile.ext
+```
+
+## Embedded Formats
+
+Some formats support embedded content:
+
+### Markdown with Embedded Code
+
+Vale automatically extracts code comments from fenced code blocks:
+
+````markdown
+```python
+# This comment will be linted
+def hello():
+    """This docstring will be linted"""
+    pass
+```
+````
+
+Enable with:
+
+```ini
+[*.md]
+BasedOnStyles = Vale
+Vale.Spelling = YES
+```
+
+### Data Formats with Embedded Text
+
+Use views to extract text from structured data:
+
+```yaml
+# openapi.yml
+openapi: 3.0.0
+info:
+  title: My API
+  description: This description will be linted
+paths:
+  /users:
+    get:
+      summary: This summary will be linted
+```
+
+Configure with:
+
+```ini
+[openapi.yml]
+View = OpenAPI
+BasedOnStyles = Vale
+```
+
+<Warning>
+Processing embedded formats can be slow for large files. Use `IgnoredScopes` or views to limit what Vale processes.
+</Warning>
+
+## Troubleshooting
+
+### Format Not Recognized
+
+If Vale doesn't recognize a format:
+
+1. Add a format mapping in `[formats]`
+2. Create a syntax-specific section
+3. Verify the file extension matches
+
+### Incorrect Parsing
+
+If a format is parsed incorrectly:
+
+1. Check for conflicting scope settings
+2. Verify `TokenIgnores` patterns
+3. Use `--debug` to see parsing details
+
+### Performance Issues
+
+For large or complex files:
+
+1. Use `IgnoredScopes` to skip large sections
+2. Add specific `TokenIgnores` patterns
+3. Create a custom view for data formats
+4. Consider splitting large files

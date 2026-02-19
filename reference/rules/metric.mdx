@@ -1,0 +1,305 @@
+---
+title: Metric
+description: Create custom readability-like formulas
+---
+
+The `metric` rule type enables you to create custom formulas based on document statistics. It's like the `readability` rule, but with complete control over the formula and condition.
+
+## How It Works
+
+The `metric` rule extracts document statistics (word count, sentence count, heading counts, etc.), evaluates your custom formula, and checks if the result meets your specified condition.
+
+## Parameters
+
+<ParamField path="formula" type="string" required>
+  A mathematical expression using document statistics as variables. Supports arithmetic operations and the `math` module.
+</ParamField>
+
+<ParamField path="condition" type="string" required>
+  A boolean condition to evaluate the formula result against (e.g., `"> 10"`, `"< 5"`, `">= 8"`).
+</ParamField>
+
+## Available Variables
+
+Vale provides these document statistics as variables:
+
+| Variable | Description |
+|----------|-------------|
+| `words` | Total word count |
+| `sentences` | Total sentence count |
+| `characters` | Total character count |
+| `paragraphs` | Total paragraph count |
+| `pre` | Number of code blocks |
+| `list` | Number of list items |
+| `blockquote` | Number of blockquotes |
+| `heading_h1` | Number of H1 headings |
+| `heading_h2` | Number of H2 headings |
+| `heading_h3` | Number of H3 headings |
+| `heading_h4` | Number of H4 headings |
+| `heading_h5` | Number of H5 headings |
+| `heading_h6` | Number of H6 headings |
+
+<Note>
+You can also use `heading.h1` through `heading.h6` syntax, which Vale automatically converts to `heading_h1` format.
+</Note>
+
+## Examples
+
+### Words per Sentence
+
+Enforce average sentence length:
+
+```yaml
+extends: metric
+message: "This topic has %s words per sentence."
+formula: words / sentences
+condition: "> 10"
+```
+
+### Automated Readability Index
+
+Implement a custom readability formula:
+
+```yaml
+extends: metric
+message: "Try to keep the Automated Readability Index (%s) below 8."
+link: https://en.wikipedia.org/wiki/Automated_readability_index
+formula: |
+  (4.71 * (characters / words)) + (0.5 * (words / sentences)) - 21.43
+condition: "> 8"
+```
+
+### Heading Density
+
+Ensure sufficient heading structure:
+
+```yaml
+extends: metric
+message: "Not enough headings for content length (%s headings per 1000 words)"
+formula: |
+  ((heading_h2 + heading_h3 + heading_h4) / words) * 1000
+condition: "< 3"
+```
+
+### Paragraph Length Limit
+
+Limit average paragraph length:
+
+```yaml
+extends: metric
+message: "Average paragraph length (%s words) too high"
+formula: words / paragraphs
+condition: "> 150"
+```
+
+### Code-to-Text Ratio
+
+Ensure balance between code and explanation:
+
+```yaml
+extends: metric
+message: "Too much code, not enough explanation (%s)"
+formula: pre / paragraphs
+condition: "> 0.5"
+```
+
+### Complex Condition
+
+Use multiple conditions:
+
+```yaml
+extends: metric
+message: "Document structure score: %s"
+formula: |
+  (sentences / paragraphs) + (heading_h2 * 2) + (heading_h3 * 1.5) + list
+condition: "< 20"
+```
+
+### List Item Density
+
+Ensure sufficient explanatory text:
+
+```yaml
+extends: metric
+message: "Too many list items relative to content (%s)"
+formula: list / sentences
+condition: "> 0.4"
+```
+
+### Minimum Content
+
+Require minimum content:
+
+```yaml
+extends: metric
+message: "Document too short (%s words)"
+formula: words
+condition: "< 100"
+```
+
+## Mathematical Operations
+
+The formula supports standard arithmetic:
+
+- Addition: `+`
+- Subtraction: `-`
+- Multiplication: `*`
+- Division: `/`
+- Parentheses: `(` `)`
+- Math module functions: `math.sqrt()`, `math.floor()`, `math.ceil()`, etc.
+
+### Using Math Module
+
+```yaml
+formula: |
+  math := import("math")
+  math.sqrt(words * sentences)
+condition: "> 50"
+```
+
+## Condition Operators
+
+Valid comparison operators:
+
+- Greater than: `">"`
+- Less than: `"<"`
+- Greater or equal: `">="`
+- Less or equal: `"<="`
+- Equal: `"=="`
+- Not equal: `"!="`
+
+## Use Cases
+
+<Info>
+The `metric` rule is ideal for:
+- Custom readability formulas
+- Document structure validation
+- Content density requirements
+- Style guide compliance metrics
+- Quality control thresholds
+- Balanced content ratios
+</Info>
+
+## Multi-line Formulas
+
+Use YAML's pipe (`|`) for readable multi-line formulas:
+
+```yaml
+formula: |
+  avg_sentence := words / sentences
+  avg_paragraph := words / paragraphs
+  (avg_sentence * 0.6) + (avg_paragraph * 0.4)
+```
+
+## Technical Details
+
+Internally, the `metric` rule (internal/check/metric.go:50-96):
+
+1. Calls `f.ComputeMetrics()` to extract document statistics
+2. Evaluates the formula using the Tengo scripting engine
+3. Evaluates the condition as a boolean expression
+4. If the condition is true, creates an alert at line 1
+
+The evaluation uses Tengo:
+```go
+script := tengo.NewScript([]byte(fmt.Sprintf(boilerplate, expr)))
+script.SetImports(stdlib.GetModuleMap("math"))
+
+for pk, pv := range params {
+    err := script.Add(pk, pv)
+    // ...
+}
+
+compiled, err := script.RunContext(ctx)
+res := compiled.Get("__res__").Value()
+```
+
+## Message Formatting
+
+The `%s` placeholder is replaced with the calculated result:
+
+```yaml
+message: "Average is %s words per sentence"
+formula: words / sentences
+# Message becomes: "Average is 12.50 words per sentence"
+```
+
+The result is formatted to two decimal places automatically.
+
+## Scope Behavior
+
+<Warning>
+The `metric` rule is automatically document-scoped (`scope: summary`). It analyzes the entire document and places alerts at line 1, similar to the `readability` rule.
+
+You cannot change this scope—metrics require full-document statistics.
+</Warning>
+
+## Zero Division Handling
+
+If variables could be zero (empty document sections), handle division carefully:
+
+```yaml
+formula: |
+  sentences > 0 ? words / sentences : 0
+condition: "> 15"
+```
+
+Or check the condition:
+
+```yaml
+condition: "> 0 && < 20"
+```
+
+## Advanced Example: Content Quality Score
+
+Combine multiple factors:
+
+```yaml
+extends: metric
+message: "Content quality score too low: %s (target: 50+)"
+level: warning
+formula: |
+  # Weight different factors
+  length_score := words / 10
+  structure_score := (heading_h2 + heading_h3) * 5
+  visual_score := (list + blockquote + pre) * 2
+  
+  # Calculate total
+  length_score + structure_score + visual_score
+condition: "< 50"
+```
+
+## Debugging Formulas
+
+To debug your formula:
+
+1. Start simple: `formula: words`
+2. Add operations one at a time
+3. Check error messages for syntax issues
+4. Verify variable names (check spelling)
+5. Test with documents of known statistics
+
+<Tip>
+Vale reports formula errors with the line number in your rule file. If your formula doesn't work, check:
+
+- Variable spelling (use underscores: `heading_h1` not `heading.h1` in the formula)
+- Division by zero
+- Missing operators
+- Unbalanced parentheses
+</Tip>
+
+## Performance
+
+Metric calculations are fast because:
+
+1. Statistics are computed once per file
+2. Formulas are compiled, not interpreted
+3. No regex or text processing during evaluation
+
+Metrics add minimal overhead to Vale's runtime.
+
+## Related Rule Types
+
+- **readability**: Use for standard readability formulas
+- **occurrence**: Use for simple token counting without formulas
+- **script**: Use for more complex logic beyond mathematical formulas

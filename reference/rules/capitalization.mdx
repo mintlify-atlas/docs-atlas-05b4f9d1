@@ -1,0 +1,231 @@
+---
+title: Capitalization
+description: Enforce specific capitalization styles
+---
+
+The `capitalization` rule type checks the capitalization style of text against predefined patterns or case styles. It supports multiple built-in styles including title case, sentence case, and custom patterns.
+
+## How It Works
+
+The `capitalization` rule compares text against a specified case style (like title case or sentence case) or a custom regex pattern. It can apply style guides like AP or Chicago and handle exceptions for proper nouns and technical terms.
+
+## Parameters
+
+<ParamField path="match" type="string" required>
+  The capitalization style to enforce. Can be:
+  - `$title`: Title case (with AP or Chicago style)
+  - `$sentence`: Sentence case
+  - `$lower`: Lowercase
+  - `$upper`: Uppercase
+  - A custom regex pattern
+</ParamField>
+
+<ParamField path="style" type="string" default="AP">
+  The style guide to use for title case. Options are `AP` or `Chicago`. Only applies when `match: $title`.
+</ParamField>
+
+<ParamField path="exceptions" type="array">
+  An array of terms that should be ignored when checking capitalization.
+</ParamField>
+
+<ParamField path="indicators" type="array">
+  An array of suffixes (like `:`) that indicate the next token should be ignored. Used with sentence case.
+</ParamField>
+
+<ParamField path="threshold" type="float" default="0.8">
+  The minimum proportion of words that must match the style for text to be considered correct. Range: 0.0 to 1.0.
+</ParamField>
+
+<ParamField path="vocab" type="boolean" default="true">
+  If `true`, Vale will use your vocabulary files as additional exceptions.
+</ParamField>
+
+<ParamField path="prefix" type="string">
+  A regex pattern for prefixes to ignore when checking capitalization (e.g., list markers like `"a. "`).
+</ParamField>
+
+## Examples
+
+### Title Case with AP Style
+
+Enforce AP-style title case for headings:
+
+```yaml
+extends: capitalization
+message: "'%s' should be in title case"
+level: warning
+scope: heading
+match: $title
+style: AP
+exceptions:
+  - API
+  - CLI
+  - JSON
+```
+
+### Title Case with Chicago Style
+
+Use Chicago Manual of Style for titles:
+
+```yaml
+extends: capitalization
+message: "'%s' should use Chicago-style title case"
+level: warning
+scope: heading
+match: $title
+style: Chicago
+```
+
+<Note>
+**AP vs Chicago**: The main difference is treatment of prepositions and conjunctions. Chicago capitalizes prepositions of four or more letters, while AP typically uses lowercase for prepositions under four letters.
+</Note>
+
+### Sentence Case
+
+Enforce sentence case for headings:
+
+```yaml
+extends: capitalization
+message: "'%s' should be sentence-cased"
+level: warning
+scope: heading
+match: $sentence
+exceptions:
+  - Section
+  - Azure
+  - Axon Framework
+indicators:
+  - ":"
+prefix: '^[a-z]\.\s'
+```
+
+The `indicators` parameter tells Vale that after a colon, the next word should be capitalized (like starting a new sentence).
+
+### Uppercase Enforcement
+
+Require all-caps for specific scopes:
+
+```yaml
+extends: capitalization
+message: "'%s' should be uppercase"
+level: error
+scope: heading.h1
+match: $upper
+```
+
+### Lowercase Enforcement
+
+Enforce lowercase (useful for tags or labels):
+
+```yaml
+extends: capitalization
+message: "'%s' should be lowercase"
+level: warning
+scope: code
+match: $lower
+```
+
+### Custom Pattern
+
+Use a custom regex pattern for specific formats:
+
+```yaml
+extends: capitalization
+message: "'%s' doesn't match the required format"
+level: error
+scope: heading
+match: '^[A-Z][a-z]+(-[A-Z][a-z]+)*$'
+```
+
+### With Prefix Handling
+
+Handle numbered or lettered lists:
+
+```yaml
+extends: capitalization
+message: "'%s' should be sentence-cased"
+level: warning
+scope: list
+match: $sentence
+prefix: '^[a-z]\.\s|^\d+\.\s'
+```
+
+## Use Cases
+
+<Info>
+The `capitalization` rule is ideal for:
+- Enforcing heading style consistency
+- Following specific style guides (AP, Chicago)
+- Maintaining brand name capitalization
+- Standardizing title formatting
+- Ensuring proper sentence case in UI text
+</Info>
+
+## Threshold Parameter
+
+The `threshold` parameter allows flexibility in enforcement. A threshold of `0.8` means 80% of words must match the style:
+
+```yaml
+extends: capitalization
+message: "'%s' should be in title case"
+level: warning
+scope: heading
+match: $title
+threshold: 0.9  # Stricter: 90% must match
+```
+
+This is useful because technical terms, proper nouns, and acronyms may legitimately deviate from the style.
+
+## Technical Details
+
+Internally, the `capitalization` rule (internal/check/capitalization.go:114-142):
+
+1. Determines the check function based on `match` value
+2. For `$title`, creates a `TitleConverter` with the specified style
+3. For `$sentence`, creates a `SentenceConverter` with indicators
+4. Applies the converter to the text
+5. Compares the result with the original text
+6. If mismatch exceeds threshold, creates an alert
+
+The converters handle exceptions internally:
+```go
+tc := strcase.NewTitleConverter(
+    strcase.APStyle,
+    strcase.UsingVocab(rule.Exceptions),
+    strcase.UsingPrefix(rule.Prefix),
+)
+```
+
+## Style Guide Details
+
+### AP Style Title Case
+- Capitalize words of four letters or more
+- Lowercase articles, short prepositions, and coordinating conjunctions
+- Always capitalize the first and last word
+
+### Chicago Style Title Case
+- Capitalize prepositions of four or more letters
+- Lowercase articles and short conjunctions
+- More liberal capitalization than AP
+
+## Automatic Suggestions
+
+When using `action.name: replace` with `$title` or `$sentence`, Vale automatically provides the correctly-cased version as a suggestion:
+
+```yaml
+extends: capitalization
+message: "'%s' should be in title case"
+level: warning
+scope: heading
+match: $title
+action:
+  name: replace
+```
+
+This enables automatic fixes in editors that support Vale's action protocol.
+
+## Related Rule Types
+
+- **substitution**: Use when you want to replace specific case violations with exact alternatives
+- **existence**: Use when you want to flag specific improperly-cased terms
+- **consistency**: Use when you want to ensure consistent capitalization of variants

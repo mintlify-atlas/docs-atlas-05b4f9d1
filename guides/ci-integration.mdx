@@ -1,0 +1,599 @@
+---
+title: CI/CD Integration
+description: Integrate Vale into your continuous integration and deployment pipelines
+---
+
+Vale is designed for CI/CD integration, with predictable exit codes, multiple output formats, and support for all major CI platforms.
+
+## Exit Codes
+
+Vale uses standard exit codes to indicate success or failure:
+
+- **0**: No errors found (warnings and suggestions may be present)
+- **1**: One or more errors found
+- **2**: Runtime error (configuration issue, file not found, etc.)
+
+From `cmd/vale/main.go:82,129`:
+
+```go
+func handleError(err error) {
+    ShowError(err, Flags.Output, os.Stderr)
+    os.Exit(2)
+}
+
+if hasErrors && !Flags.NoExit {
+    os.Exit(1)
+}
+```
+
+<Info>
+  Use the `--no-exit` flag to prevent Vale from exiting with code 1 on errors. This is useful for reporting-only scenarios.
+</Info>
+
+## Output Formats
+
+Vale supports multiple output formats optimized for different CI systems.
+
+### JSON Output
+
+Perfect for programmatic parsing:
+
+```bash
+vale --output=JSON *.md
+```
+
+Output structure:
+
+```json
+{
+  "README.md": [
+    {
+      "Action": {
+        "Name": "replace",
+        "Params": ["use"]
+      },
+      "Check": "MyStyle.Terms",
+      "Description": "",
+      "Line": 5,
+      "Link": "https://example.com/style-guide",
+      "Message": "Use 'use' instead of 'utilize'",
+      "Severity": "error",
+      "Span": [12, 19],
+      "Match": "utilize"
+    }
+  ]
+}
+```
+
+From `cmd/vale/json.go:10-23`, Vale groups alerts by file path.
+
+### Line Output
+
+Compatible with most CI parsers:
+
+```bash
+vale --output=line *.md
+```
+
+Output format:
+
+```
+README.md:5:12:MyStyle.Terms:Use 'use' instead of 'utilize'
+README.md:8:1:MyStyle.Headings:'introduction' should be capitalized
+```
+
+Format: `<path>:<line>:<col>:<check>:<message>`
+
+This format is compatible with:
+- GitHub Actions problem matchers
+- GitLab CI error formats
+- Jenkins console parsers
+- VS Code problem matchers
+
+### CLI Output
+
+Human-readable output for local development:
+
+```bash
+vale *.md
+```
+
+## GitHub Actions
+
+Integrate Vale using the official action or a custom workflow.
+
+### Using the Official Action
+
+<Steps>
+  <Step title="Create workflow file">
+    Create `.github/workflows/vale.yml`:
+    
+    ```yaml .github/workflows/vale.yml
+    name: Vale Linting
+    on: [pull_request]
+    
+    jobs:
+      vale:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v3
+          - uses: errata-ai/vale-action@reviewdog
+            with:
+              files: docs
+            env:
+              GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+    ```
+  </Step>
+  
+  <Step title="Configure Vale">
+    Add `.vale.ini` to your repository:
+    
+    ```ini .vale.ini
+    StylesPath = .github/styles
+    MinAlertLevel = suggestion
+    
+    Packages = Microsoft, write-good
+    
+    [*.md]
+    BasedOnStyles = Vale, Microsoft
+    ```
+  </Step>
+  
+  <Step title="Sync styles on install">
+    The action automatically runs `vale sync` to download packages.
+  </Step>
+</Steps>
+
+### Custom GitHub Actions Workflow
+
+For more control, create a custom workflow:
+
+```yaml .github/workflows/vale.yml
+name: Vale
+
+on:
+  pull_request:
+    paths:
+      - '**.md'
+      - '**.mdx'
+      - '.vale.ini'
+      - '.github/workflows/vale.yml'
+
+jobs:
+  vale:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Install Vale
+        run: |
+          wget https://github.com/errata-ai/vale/releases/latest/download/vale_Linux_64-bit.tar.gz
+          tar -xvzf vale_Linux_64-bit.tar.gz
+          sudo mv vale /usr/local/bin/
+      
+      - name: Sync styles
+        run: vale sync
+      
+      - name: Run Vale
+        run: vale --output=line --minAlertLevel=warning docs/
+```
+
+<Tip>
+  Pin to a specific Vale version for reproducible builds:
+  ```bash
+  wget https://github.com/errata-ai/vale/releases/download/v3.0.0/vale_Linux_64-bit.tar.gz
+  ```
+</Tip>
+
+## GitLab CI
+
+Integrate Vale into GitLab CI/CD pipelines.
+
+### Basic Integration
+
+```yaml .gitlab-ci.yml
+stages:
+  - test
+
+vale:
+  stage: test
+  image: golang:1.25
+  script:
+    - wget https://github.com/errata-ai/vale/releases/latest/download/vale_Linux_64-bit.tar.gz
+    - tar -xvzf vale_Linux_64-bit.tar.gz
+    - mv vale /usr/local/bin/
+    - vale sync
+    - vale --output=line docs/
+  only:
+    - merge_requests
+```
+
+From the actual `.gitlab-ci.yml` in Vale's repository:
+
+```yaml .gitlab-ci.yml
+image: golang:1.25
+
+stages:
+  - test
+  - release
+
+test:
+  stage: test
+  script:
+    - make setup
+    - make build os=linux exe=vale
+    - make test
+```
+
+### With Caching
+
+```yaml .gitlab-ci.yml
+vale:
+  stage: test
+  image: golang:1.25
+  cache:
+    paths:
+      - .cache/vale/
+  before_script:
+    - wget https://github.com/errata-ai/vale/releases/latest/download/vale_Linux_64-bit.tar.gz
+    - tar -xvzf vale_Linux_64-bit.tar.gz
+    - mv vale /usr/local/bin/
+  script:
+    - vale sync
+    - vale --output=line docs/
+  artifacts:
+    when: always
+    reports:
+      codequality: vale-report.json
+```
+
+## CircleCI
+
+Integrate Vale into CircleCI workflows:
+
+```yaml .circleci/config.yml
+version: 2.1
+
+jobs:
+  vale:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - run:
+          name: Install Vale
+          command: |
+            wget https://github.com/errata-ai/vale/releases/latest/download/vale_Linux_64-bit.tar.gz
+            tar -xvzf vale_Linux_64-bit.tar.gz
+            sudo mv vale /usr/local/bin/
+      - run:
+          name: Sync styles
+          command: vale sync
+      - run:
+          name: Run Vale
+          command: vale --output=line docs/
+
+workflows:
+  version: 2
+  test:
+    jobs:
+      - vale
+```
+
+## Jenkins
+
+Integrate Vale into Jenkins pipelines:
+
+```groovy Jenkinsfile
+pipeline {
+    agent any
+    
+    stages {
+        stage('Install Vale') {
+            steps {
+                sh '''
+                    wget https://github.com/errata-ai/vale/releases/latest/download/vale_Linux_64-bit.tar.gz
+                    tar -xvzf vale_Linux_64-bit.tar.gz
+                    sudo mv vale /usr/local/bin/
+                '''
+            }
+        }
+        
+        stage('Lint') {
+            steps {
+                sh 'vale sync'
+                sh 'vale --output=line docs/ > vale-output.txt || true'
+                recordIssues(
+                    tool: issues(
+                        pattern: 'vale-output.txt',
+                        name: 'Vale'
+                    )
+                )
+            }
+        }
+    }
+}
+```
+
+## Pre-commit Hook
+
+Use Vale with the `pre-commit` framework:
+
+<Steps>
+  <Step title="Create hook configuration">
+    Add to `.pre-commit-config.yaml`:
+    
+    ```yaml .pre-commit-config.yaml
+    repos:
+      - repo: https://github.com/errata-ai/vale
+        rev: v3.0.0
+        hooks:
+          - id: vale
+    ```
+  </Step>
+  
+  <Step title="Install pre-commit">
+    ```bash
+    pip install pre-commit
+    pre-commit install
+    ```
+  </Step>
+  
+  <Step title="Run on commit">
+    Vale now runs automatically on `git commit`:
+    
+    ```bash
+    git add docs/new-page.md
+    git commit -m "Add new page"
+    # Vale runs automatically
+    ```
+  </Step>
+</Steps>
+
+Vale's `.pre-commit-hooks.yaml` defines the hook:
+
+```yaml .pre-commit-hooks.yaml
+- id: vale
+  name: vale
+  description: Run Vale on documentation
+  entry: vale
+  language: golang
+  files: \.(md|mdx|txt|rst|adoc)$
+```
+
+## Docker
+
+Run Vale in a Docker container:
+
+```dockerfile Dockerfile
+FROM alpine:latest
+
+RUN apk add --no-cache wget tar
+
+WORKDIR /app
+
+RUN wget https://github.com/errata-ai/vale/releases/latest/download/vale_Linux_64-bit.tar.gz && \
+    tar -xvzf vale_Linux_64-bit.tar.gz && \
+    mv vale /usr/local/bin/ && \
+    rm vale_Linux_64-bit.tar.gz
+
+COPY .vale.ini .
+COPY styles/ styles/
+
+ENTRYPOINT ["vale"]
+CMD ["--help"]
+```
+
+Use in CI:
+
+```yaml .github/workflows/vale.yml
+jobs:
+  vale:
+    runs-on: ubuntu-latest
+    container:
+      image: myorg/vale:latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: vale docs/
+```
+
+## Filtering Results
+
+Control which alerts cause CI failures:
+
+### By Alert Level
+
+```bash
+# Only fail on errors
+vale --minAlertLevel=error docs/
+
+# Fail on warnings and errors
+vale --minAlertLevel=warning docs/
+
+# Report everything, but only fail on errors
+vale --minAlertLevel=suggestion docs/
+```
+
+### By Configuration
+
+```ini .vale.ini
+MinAlertLevel = warning
+
+[*.md]
+BasedOnStyles = MyStyle
+
+# Disable specific rules in CI
+MyStyle.Pedantic = NO
+
+# Only enable critical rules
+[docs/api/**/*.md]
+BasedOnStyles = MyStyle
+MyStyle.Spelling = YES
+MyStyle.Terms = YES
+```
+
+### By Environment Variable
+
+Use environment variables to change behavior in CI:
+
+```bash
+export VALE_MIN_ALERT_LEVEL=error
+vale docs/
+```
+
+Supported environment variables (from `internal/core/config.go`):
+
+- `VALE_CONFIG_PATH`: Path to `.vale.ini`
+- `VALE_STYLES_PATH`: Override `StylesPath`
+- `VALE_MIN_ALERT_LEVEL`: Override `MinAlertLevel`
+
+<Warning>
+  Environment variables override configuration file settings.
+</Warning>
+
+## Handling Sync in CI
+
+The `vale sync` command downloads style packages defined in `Packages`.
+
+### Caching Styles
+
+Cache the styles directory to speed up CI:
+
+```yaml .github/workflows/vale.yml
+jobs:
+  vale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Cache Vale styles
+        uses: actions/cache@v3
+        with:
+          path: styles/
+          key: vale-styles-${{ hashFiles('.vale.ini') }}
+      
+      - name: Install Vale
+        run: |
+          wget https://github.com/errata-ai/vale/releases/latest/download/vale_Linux_64-bit.tar.gz
+          tar -xvzf vale_Linux_64-bit.tar.gz
+          sudo mv vale /usr/local/bin/
+      
+      - name: Sync styles
+        run: vale sync
+      
+      - name: Run Vale
+        run: vale docs/
+```
+
+### Pre-downloaded Styles
+
+Commit styles to your repository to avoid sync:
+
+```bash
+# Download styles locally
+vale sync
+
+# Commit the styles directory
+git add styles/
+git commit -m "Add Vale styles"
+```
+
+Update `.vale.ini` to remove `Packages`:
+
+```ini .vale.ini
+StylesPath = styles
+MinAlertLevel = warning
+
+[*.md]
+BasedOnStyles = Microsoft, MyStyle
+```
+
+## Generating Reports
+
+Create reports for CI artifacts:
+
+### JSON Report
+
+```bash
+vale --output=JSON docs/ > vale-report.json
+```
+
+### HTML Report
+
+Use a custom tool to convert JSON to HTML:
+
+```bash
+vale --output=JSON docs/ | python scripts/vale-to-html.py > vale-report.html
+```
+
+## Parallel Execution
+
+Vale automatically processes files in parallel. Control concurrency with environment variables:
+
+```bash
+# Limit to 4 concurrent files
+export GOMAXPROCS=4
+vale docs/
+```
+
+## Best Practices
+
+1. **Pin Vale version**: Use specific versions for reproducible builds
+2. **Cache styles**: Speed up CI by caching the styles directory
+3. **Use line output**: Most compatible with CI error parsers
+4. **Set appropriate alert levels**: Only fail on errors in CI
+5. **Filter by path**: Run different rules on different paths
+6. **Test configuration**: Use `vale ls-config` to verify settings
+7. **Handle sync properly**: Either cache styles or commit them
+8. **Use exit codes**: Check exit code 2 for configuration errors
+
+## Troubleshooting
+
+### Configuration Not Found
+
+Vale searches for `.vale.ini` in:
+1. Current directory
+2. Parent directories (up to root)
+3. `$HOME/.vale.ini`
+
+Specify explicitly:
+
+```bash
+vale --config=path/to/.vale.ini docs/
+```
+
+### Styles Not Found
+
+Check the styles path:
+
+```bash
+vale ls-config
+# Shows resolved configuration
+
+vale ls-dirs
+# Shows expected paths
+```
+
+### Performance Issues
+
+Optimize for large repositories:
+
+```bash
+# Process specific file types
+vale --glob='*.{md,mdx}' docs/
+
+# Exclude large files
+vale --ignore='**/node_modules/**' docs/
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Editor Integration" icon="code" href="/guides/editor-integration">
+    Set up Vale in your editor for real-time feedback
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/reference/cli/overview">
+    Explore all CLI commands and options
+  </Card>
+</CardGroup>

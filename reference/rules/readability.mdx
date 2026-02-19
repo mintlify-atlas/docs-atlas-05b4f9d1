@@ -1,0 +1,226 @@
+---
+title: Readability
+description: Calculate and enforce readability scores
+---
+
+The `readability` rule type calculates the reading grade level of text using standard readability metrics. It helps ensure content is accessible to your target audience.
+
+## How It Works
+
+The `readability` rule processes text through one or more readability formulas, calculates an average grade level, and triggers an alert if the grade exceeds the specified threshold.
+
+## Parameters
+
+<ParamField path="metrics" type="array" required>
+  An array of readability metrics to calculate. Options:
+  - `Gunning Fog`
+  - `Coleman-Liau`
+  - `Flesch-Kincaid`
+  - `SMOG`
+  - `Automated Readability`
+</ParamField>
+
+<ParamField path="grade" type="float" required>
+  The maximum acceptable grade level. Alerts trigger when the calculated grade exceeds this value.
+</ParamField>
+
+## Examples
+
+### Flesch-Kincaid Grade Level
+
+Use the most common readability metric:
+
+```yaml
+extends: readability
+message: "Grade level (%s) too high!"
+level: warning
+grade: 7
+metrics:
+  - Flesch-Kincaid
+```
+
+### Multiple Metrics Average
+
+Calculate an average across multiple metrics:
+
+```yaml
+extends: readability
+message: "Reading grade level (%s) exceeds target (8)"
+level: error
+grade: 8
+metrics:
+  - Flesch-Kincaid
+  - Gunning Fog
+  - Coleman-Liau
+```
+
+### SMOG for Technical Writing
+
+Use SMOG index for technical documentation:
+
+```yaml
+extends: readability
+message: "SMOG index (%s) too high for general audience"
+level: warning
+grade: 10
+metrics:
+  - SMOG
+```
+
+### Comprehensive Check
+
+Use all available metrics for thorough evaluation:
+
+```yaml
+extends: readability
+message: "Average grade level (%s) exceeds maximum (9)"
+level: error
+grade: 9
+metrics:
+  - Gunning Fog
+  - Coleman-Liau
+  - Flesch-Kincaid
+  - SMOG
+  - Automated Readability
+```
+
+### Accessible Content
+
+Enforce lower grade level for accessible content:
+
+```yaml
+extends: readability
+message: "Content must be readable at 6th grade level (current: %s)"
+level: error
+grade: 6
+metrics:
+  - Flesch-Kincaid
+  - Coleman-Liau
+```
+
+## Readability Metrics Explained
+
+### Flesch-Kincaid Grade Level
+- **Formula**: `0.39 × (words / sentences) + 11.8 × (syllables / words) - 15.59`
+- **Best for**: General content and documentation
+- **Range**: Typically 0-18 (US grade levels)
+
+### Gunning Fog Index
+- **Formula**: `0.4 × ((words / sentences) + 100 × (complex words / words))`
+- **Best for**: Business writing and journalism
+- **Range**: 6+ (higher = more difficult)
+
+### Coleman-Liau Index
+- **Formula**: Based on characters per word and words per sentence
+- **Best for**: Technical documentation
+- **Range**: Typically 1-16 (US grade levels)
+
+### SMOG (Simple Measure of Gobbledygook)
+- **Formula**: `1.0430 × √(polysyllables × (30 / sentences)) + 3.1291`
+- **Best for**: Health and medical writing
+- **Range**: Typically 4-18 (US grade levels)
+
+### Automated Readability Index
+- **Formula**: `4.71 × (characters / words) + 0.5 × (words / sentences) - 21.43`
+- **Best for**: Technical and instructional content
+- **Range**: Typically 1-14+ (US grade levels)
+
+## Use Cases
+
+<Info>
+The `readability` rule is ideal for:
+- Ensuring content accessibility
+- Meeting style guide requirements
+- Targeting specific audience education levels
+- Comparing content complexity across documents
+- Quality control for user-facing documentation
+</Info>
+
+## Scope Behavior
+
+<Warning>
+The `readability` rule is automatically scoped to `summary`. This means:
+
+1. It analyzes paragraph-level content (not headings or list items)
+2. It requires complete sentences for accurate calculation
+3. Code blocks and other non-prose elements are excluded
+
+You cannot override this scope—readability metrics require sentence-level analysis to work correctly.
+</Warning>
+
+## Grade Level Guidelines
+
+Common grade level targets by content type:
+
+| Content Type | Target Grade | Metrics |
+|-------------|--------------|---------|
+| General public | 6-8 | Flesch-Kincaid, SMOG |
+| Marketing copy | 7-9 | Flesch-Kincaid, Gunning Fog |
+| Technical docs | 9-11 | Coleman-Liau, Automated Readability |
+| Academic papers | 12-14 | Multiple metrics |
+| Medical/Legal | 10-12 | SMOG, Flesch-Kincaid |
+
+## Technical Details
+
+Internally, the `readability` rule (internal/check/readability.go:43-76):
+
+1. Creates a `Document` from the scoped text
+2. Calculates each specified metric individually
+3. Sums all metric scores
+4. Divides by the number of metrics to get average
+5. Compares average against `grade` threshold
+6. If exceeded, creates an alert at line 1
+
+The calculation code:
+```go
+doc := summarize.NewDocument(blk.Text)
+grade := 0.0
+
+if core.StringInSlice("SMOG", o.Metrics) {
+    grade += doc.SMOG()
+}
+// ... other metrics ...
+
+grade /= float64(len(o.Metrics))
+```
+
+## Alert Format
+
+The `%s` placeholder in the message is replaced with the calculated grade level, formatted to two decimal places:
+
+```yaml
+message: "Reading grade level (%s) too high"
+# Becomes: "Reading grade level (10.25) too high"
+```
+
+## Multiple Metrics Averaging
+
+When using multiple metrics, Vale calculates each independently and averages the results. This provides a more balanced assessment:
+
+```yaml
+metrics:
+  - Flesch-Kincaid  # Returns: 8.5
+  - Gunning Fog     # Returns: 9.2
+  - Coleman-Liau    # Returns: 7.8
+# Average: (8.5 + 9.2 + 7.8) / 3 = 8.5
+```
+
+## Limitations
+
+<Note>
+Readability metrics have limitations:
+
+- They don't understand context or meaning
+- Technical jargon may inflate scores incorrectly
+- Short documents may yield unreliable scores
+- They assume English language conventions
+- Formulas may disagree on the same text
+
+Use multiple metrics and combine with manual review for best results.
+</Note>
+
+## Related Rule Types
+
+- **metric**: Use for custom formulas based on document statistics
+- **occurrence**: Use to count specific elements (like long sentences)
+- **sequence**: Use to detect complex sentence structures
