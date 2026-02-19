@@ -1,0 +1,135 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Vale",
+  "projectDescription": "A markup-aware linter for prose built with speed and extensibility in mind.",
+  "theme": "aspen",
+  "primaryColor": "#4169E1",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/styles",
+              "concepts/scoping",
+              "concepts/configuration",
+              "concepts/vocabularies"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/writing-rules",
+              "guides/custom-styles",
+              "guides/ci-integration",
+              "guides/editor-integration"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/packages",
+              "advanced/metrics",
+              "advanced/filters",
+              "advanced/transformations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "CLI Commands",
+            "pages": [
+              "reference/cli/overview",
+              "reference/cli/lint",
+              "reference/cli/sync",
+              "reference/cli/ls-config",
+              "reference/cli/ls-metrics",
+              "reference/cli/ls-dirs",
+              "reference/cli/ls-vars",
+              "reference/cli/fix"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "reference/config/overview",
+              "reference/config/styles",
+              "reference/config/formats",
+              "reference/config/environment"
+            ]
+          },
+          {
+            "group": "Rule Types",
+            "pages": [
+              "reference/rules/existence",
+              "reference/rules/substitution",
+              "reference/rules/occurrence",
+              "reference/rules/repetition",
+              "reference/rules/consistency",
+              "reference/rules/conditional",
+              "reference/rules/capitalization",
+              "reference/rules/readability",
+              "reference/rules/spelling",
+              "reference/rules/sequence",
+              "reference/rules/metric",
+              "reference/rules/script"
+            ]
+          },
+          {
+            "group": "Output Formats",
+            "pages": [
+              "reference/output/cli",
+              "reference/output/json",
+              "reference/output/line"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Markup-aware linting for Markdown, AsciiDoc, reStructuredText, HTML, XML, and Org",
+    "Extensible rule system with 11 rule types defined in YAML",
+    "Fast performance with parallel processing built in Go",
+    "Style guide enforcement with package hub integration",
+    "Custom vocabulary and terminology support",
+    "Multiple output formats (CLI, JSON, line, custom templates)",
+    "Built-in spell checking and readability metrics",
+    "CI/CD integration with non-zero exit codes",
+    "Editor integration via native messaging",
+    "Remote configuration sync with package management"
+  ],
+  "publicApiSurface": [
+    "vale [files...] - Lint files or directories",
+    "vale sync - Download and install external configuration sources",
+    "vale ls-config - Print current configuration",
+    "vale ls-metrics <file> - Print file's internal metrics",
+    "vale ls-dirs - Print default configuration directories",
+    "vale ls-vars - Print supported environment variables",
+    "vale fix <alert> - Attempt to automatically fix alerts",
+    "--config <path> - Specify config file path",
+    "--output <format> - Output format (CLI, JSON, line, or template)",
+    "--glob <pattern> - Glob pattern for file matching",
+    "--filter <expr> - Expression to filter rules",
+    "--minAlertLevel <level> - Minimum alert level to display",
+    "--ext <extension> - Extension to associate with stdin",
+    "--no-exit - Don't return nonzero exit code on errors",
+    "--ignore-syntax - Lint all files line-by-line",
+    "--sort - Sort files by name in output"
+  ]
+}
