@@ -151,6 +151,18 @@ These options work with any Vale command:
   Don't load the global configuration file.
 </ParamField>
 
+<ParamField path="--sources" type="string">
+  Specify additional configuration files to load.
+  
+  ```bash
+  vale --sources=custom.ini myfile.md
+  ```
+</ParamField>
+
+<ParamField path="--mode-compat" type="boolean" default="false">
+  Prioritize local Vale configurations over global ones.
+</ParamField>
+
 <ParamField path="-v, --version" type="boolean">
   Print Vale's version number.
   
